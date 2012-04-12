@@ -9,20 +9,20 @@ and the parsing speed is essentially identical to that of C/C++ libraries provid
 
 The functionality and interface are currently the same as documented here: http://pyvcf.rtfd.org/
 
-Installation::
+Installation
 ============
 
     python setup.py build
     python setup.py install
 
 
-Testing::
+Testing
 =======
 
     python setup.py test
 
 
-Basic usage::
+Basic usage
 ===========
 
     >>> import cyvcf
