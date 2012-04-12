@@ -698,17 +698,6 @@ cdef class Reader(object):
         if compressed or (filename and filename.endswith('.gz')):
             self.reader = gzip.GzipFile(fileobj=self.reader)
 
-        # self.filename = filename
-        # 
-        # if self.filename != b'-':
-        #     self.reader = open(self.filename, "rb")
-        # else:
-        #     self.reader = sys.stdin
-        # 
-        # # handle __BGZIP__ compressed VCF files.
-        # if compressed or (self.filename and self.filename.endswith('.gz')):
-        #     self.reader = gzip.GzipFile(fileobj=self.reader)
-
         #: metadata fields from header
         self.metadata = {}
         #: INFO fields from header
