@@ -3,7 +3,7 @@ CyVCF
 
 A Cython port of the PyVCF library maintained by @jamescasbon.
 
-The goal of this porject is to provide a very fast Python library for parsing and manipulating large VCF files.
+The goal of this project is to provide a very fast Python library for parsing and manipulating large VCF files.
 Cython has been used to optimize speed.  This version is approximately 4 times faster than PyVCF,
 and the parsing speed is essentially identical to that of C/C++ libraries provided by PLINKSEQ and VCFLIB.
 
