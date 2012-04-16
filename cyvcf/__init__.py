@@ -163,5 +163,5 @@ declared by other packages will be available for use in this script.  Please
 see :doc:`FILTERS` for full description.
 
 '''
-from parser import Reader, Writer
+from parser import VCFReader, Reader, VCFWriter, Writer
 
