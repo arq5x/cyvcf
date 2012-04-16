@@ -836,7 +836,7 @@ cdef class Reader(object):
                         entry_type = 'String'
                     else:
                         entry_type = 'Flag'
-
+            
             if entry_type == b'Integer':
                 vals = entry[1].split(',')
                 val = self._map(int, vals)
@@ -846,7 +846,10 @@ cdef class Reader(object):
             elif entry_type == b'Flag':
                 val = True
             elif entry_type == b'String':
-                val = entry[1]
+                if self.infos[ID].num is None:
+                    val = True
+                else:
+                    val = entry[1]
 
             try:
                 if self.infos[ID].num == 1 and entry_type != b'String':
