@@ -411,7 +411,7 @@ cdef class _Record(object):
            -1 = unknown / uncalled genotype
            E.g., ['A/G', 'A/A', 'G/G']
         """
-        def __get__(self): return self.gt_bases
+        def __get__(self): return self.gt_types
 
     property gt_phases:
         """A list of booleans indicating whether or not each genotype is phased.
