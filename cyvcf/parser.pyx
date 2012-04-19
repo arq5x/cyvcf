@@ -846,10 +846,11 @@ cdef class Reader(object):
             elif entry_type == b'Flag':
                 val = True
             elif entry_type == b'String':
-                if self.infos[ID].num is None:
-                    val = True
-                else:
+                try:
                     val = entry[1]
+                except IndexError:
+                    val = True
+
 
             try:
                 if self.infos[ID].num == 1 and entry_type != b'String':
