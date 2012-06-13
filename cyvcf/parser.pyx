@@ -247,14 +247,15 @@ cdef class _Record(object):
     cdef int POS, start, end, num_hom_ref, num_het, num_hom_alt, \
              num_unknown, num_called
     cdef dict INFO, _sample_indexes
+    cdef bint has_genotypes
 
     def __cinit__(self, char *CHROM, int POS, char *ID, 
-                        char *REF, list ALT, object QUAL, 
-                        object FILTER, dict INFO, char *FORMAT, 
-                        dict sample_indexes, list samples=None,
-                        list gt_bases = None, list gt_types = None, list gt_phases = None,
-                        int num_hom_ref = 0, int num_het = 0, int num_hom_alt = 0, 
-                        int num_unknown = 0, int num_called = 0):
+                        char *REF, list ALT, object QUAL=None, 
+                        object FILTER=None, dict INFO=None, object FORMAT=None, 
+                        dict sample_indexes=None, list samples=None,
+                        list gt_bases=None, list gt_types=None, list gt_phases=None,
+                        int num_hom_ref=0, int num_het=0, int num_hom_alt=0, 
+                        int num_unknown=0, int num_called=0):
         # CORE VCF fields
         self.CHROM = CHROM
         self.POS = POS
@@ -280,6 +281,10 @@ cdef class _Record(object):
         self.num_hom_alt = num_hom_alt
         self.num_unknown = num_unknown
         self.num_called = num_called
+        if self.FORMAT is not None and sample_indexes is not None:
+            self.has_genotypes = True
+        else:
+            self.has_genotypes = False
 
     def __richcmp__(self, other, int op):
         """ _Records are equal if they describe the same variant (same position, alleles) """
@@ -296,6 +301,9 @@ cdef class _Record(object):
 
     def _format_alt(self):
         return ','.join([x or '.' for x in self.ALT])
+    
+    def _format_qual(self):
+        return str(self.QUAL) if self.QUAL is not None else None
 
     def _format_info(self):
         if not self.INFO:
@@ -318,10 +326,15 @@ cdef class _Record(object):
                 for x in iterable]
                     
     def __repr__(self):
-        core = "\t".join([self.CHROM, str(self.POS), str(self.REF), self._format_alt(),
-                          str(self.QUAL), self.FILTER or '.', self._format_info(), self.FORMAT])
-        samples = "\t".join([self._format_sample(sample) for sample in self.samples])
-        return core + "\t" + samples
+        if self.has_genotypes == True:
+            core = "\t".join([self.CHROM, str(self.POS), str(self.REF), self._format_alt(),
+                          self._format_qual, self.FILTER or '.', self._format_info(), self.FORMAT])
+            samples = "\t".join([self._format_sample(sample) for sample in self.samples])
+            return core + "\t" + samples
+        else:
+            return "\t".join([self.CHROM, str(self.POS), str(self.REF), self._format_alt(),
+                          self._format_qual() or '.', self.FILTER or '.', self._format_info()])
+            
 
     def __cmp__(self, other):
         return cmp( (self.CHROM, self.POS), (other.CHROM, other.POS))
@@ -994,7 +1007,7 @@ cdef class Reader(object):
             qual = float(row[5])
         #FILT
         cdef object filt = row[6].split(';') if ';' in row[6] else row[6]
-        if filt == b'PASS':
+        if filt == b'PASS' or filt == b'.':
              filt = None
         #INFO
         cdef dict info = self._parse_info(row[7])
