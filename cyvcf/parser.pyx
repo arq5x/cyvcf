@@ -328,7 +328,7 @@ cdef class _Record(object):
     def __repr__(self):
         if self.has_genotypes == True:
             core = "\t".join([self.CHROM, str(self.POS), str(self.REF), self._format_alt(),
-                          self._format_qual, self.FILTER or '.', self._format_info(), self.FORMAT])
+                          self._format_qual(), self.FILTER or '.', self._format_info(), self.FORMAT])
             samples = "\t".join([self._format_sample(sample) for sample in self.samples])
             return core + "\t" + samples
         else:
@@ -924,8 +924,13 @@ cdef class Reader(object):
             phased = call.phased
             
             # add to the "all-samples" lists of GT info
-            gt_alleles.append(alleles) if alleles is not None else './.'
-            gt_types.append(type)  if type is not None else -1
+            if alleles is not None:
+                gt_alleles.append(alleles)
+                gt_types.append(type)
+            else:
+                gt_alleles.append('./.')
+                gt_types.append(-1)
+
             gt_phases.append(phased)
             
             # tally the appropriate GT count
