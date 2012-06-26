@@ -196,10 +196,14 @@ cdef class _Call(object):
     @property
     def gt_type(self):
         '''The type of genotype.
+           0 / 00000000 hom ref
+           1 / 00000001 het
+           2 / 00000010 missing
+           3 / 00000011 hom alt
            hom_ref  = 0
            het      = 1
-           hom_alt  = 2  (we don;t track _which+ ALT)
-           uncalled = None
+           hom_alt  = 3  (we don;t track _which+ ALT)
+           uncalled = 2
         '''
         # extract the numeric alleles of the gt string
         if self.called:
@@ -208,7 +212,7 @@ cdef class _Call(object):
                 if not self.phased else self.gt_nums.split("|")
             if a1 == a2: 
                 if a1 == "0": return 0
-                else: return 2
+                else: return 3
             else: return 1
         else: return None
 
@@ -730,15 +734,12 @@ cdef class Reader(object):
     def __iter__(self):
         return self
         
-    # def _load_line(self, char *s):
-    #     cdef int i = 0
-    #     cdef char *field
-    #     field = strtok( s, '\t' )
-    #     while( field is not NULL ):
-    #         self.row[i] = field
-    #         field = strtok( NULL, '\t' )
-    #         i += 1
-
+    def seek(self, offset):
+        self.reader.seek(offset)
+        
+    def tell(self):
+        return self.reader.tell()
+    
     property filename:
         """The name of the VCF file that the Reader is reading."""
         def __get__(self): return self.filename
@@ -929,15 +930,20 @@ cdef class Reader(object):
                 gt_types.append(type)
             else:
                 gt_alleles.append('./.')
-                gt_types.append(-1)
+                gt_types.append(2)
 
             gt_phases.append(phased)
+            
+            # 0 / 00000000 hom ref
+            # 1 / 00000001 het
+            # 2 / 00000010 missing
+            # 3 / 00000011 hom alt
             
             # tally the appropriate GT count
             if type == 0: num_hom_ref += 1
             elif type == 1: num_het += 1
-            elif type == 2: num_hom_alt += 1
-            elif type is None: num_unknown += 1
+            elif type == 3: num_hom_alt += 1
+            elif type == None: num_unknown += 1
 
         num_called = num_hom_ref + num_het + num_hom_alt
         return _SampleInfo(samp_data, gt_alleles, gt_types, gt_phases,
@@ -990,7 +996,11 @@ cdef class Reader(object):
         '''Return the next record in the file.'''
 
         #self._load_line(self.reader.next())
-        cdef list row = self.reader.next().rstrip().split('\t')
+        cdef list row
+        try:
+            row = self.reader.next().rstrip().split('\t')
+        except StopIteration:
+            raise StopIteration
         
         #CHROM
         cdef bytes chrom = row[0]
@@ -1022,7 +1032,7 @@ cdef class Reader(object):
             fmt = row[8]
         except IndexError:
             fmt = None
-            
+        
         self.curr_record = \
              _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
 
@@ -1041,6 +1051,61 @@ cdef class Reader(object):
 
         return self.curr_record
 
+
+    def parse(other, line):
+        '''Return the next record in the file.'''
+
+        #self._load_line(self.reader.next())
+        cdef list row = line.split('\t')
+
+        #CHROM
+        cdef bytes chrom = row[0]
+        if other._prepend_chr:
+            chrom = 'chr' + chrom
+        # POS
+        cdef int pos = int(row[1])
+        # ID
+        cdef bytes id = row[2]
+        #REF
+        cdef bytes ref = row[3]
+        #ALT
+        cdef list alt = other._map(str, row[4].split(','))
+        #QUAL
+        cdef object qual
+        if row[5] == b'.':
+            qual = None
+        else:
+            qual = float(row[5])
+        #FILT
+        cdef object filt = row[6].split(';') if ';' in row[6] else row[6]
+        if filt == b'PASS' or filt == b'.':
+             filt = None
+        #INFO
+        cdef dict info = other._parse_info(row[7])
+        #FORMAT
+        cdef bytes fmt
+        try:
+            fmt = row[8]
+        except IndexError:
+            fmt = None
+
+        curr_record = \
+             _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, other._sample_indexes)
+
+        # collect GENOTYPE information for the current VCF record (self.curr_record)
+        if fmt is not None:
+            sample_info = other._parse_samples(row[9:], fmt)
+            curr_record.samples = sample_info.samples
+            curr_record.gt_bases = sample_info.gt_bases
+            curr_record.gt_types = sample_info.gt_types
+            curr_record.gt_phases = sample_info.gt_phases
+            curr_record.num_hom_ref = sample_info.num_hom_ref
+            curr_record.num_het = sample_info.num_het
+            curr_record.num_hom_alt = sample_info.num_hom_alt
+            curr_record.num_unknown = sample_info.num_unknown
+            curr_record.num_called = sample_info.num_called
+
+        return curr_record
 
     def fetch(self, chrom, start, end=None):
         """ fetch records from a Tabix indexed VCF, requires pysam

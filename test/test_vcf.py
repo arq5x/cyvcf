@@ -495,15 +495,15 @@ class TestCall(unittest.TestCase):
                 print s.data
             gt_types = [s.gt_type for s in var.samples]
             if var.POS == 14370:
-                self.assertEqual([0,1,2], gt_types)
+                self.assertEqual([0,1,3], gt_types)
             elif var.POS == 17330:
                 self.assertEqual([0,1,0], gt_types)
             elif var.POS == 1110696:
-                self.assertEqual([1,1,2], gt_types)
+                self.assertEqual([1,1,3], gt_types)
             elif var.POS == 1230237:
                 self.assertEqual([0,0,0], gt_types)
             elif var.POS == 1234567:
-                self.assertEqual([None,1,2], gt_types)
+                self.assertEqual([None,1,3], gt_types)
 
 class TestTabix(unittest.TestCase):
 
