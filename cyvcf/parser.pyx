@@ -480,7 +480,10 @@ cdef class _Record(object):
         het = self.num_het
         hom_alt = self.num_hom_alt
         num_chroms = float(2.0*self.num_called)
-        return float(het + 2*hom_alt)/float(num_chroms)
+        if num_chroms == 0.0:
+            return 0.0
+        else:
+            return float(het + 2*hom_alt)/float(num_chroms)
 
     @property
     def nucl_diversity(self):
