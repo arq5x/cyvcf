@@ -853,7 +853,10 @@ cdef class Reader(object):
             
             if entry_type == b'Integer':
                 vals = entry[1].split(',')
-                val = self._map(int, vals)
+                try:
+                    val = self._map(int, vals)
+                except ValueError:
+                    val = self._map(float, vals)
             elif entry_type == b'Float':
                 vals = entry[1].split(',')
                 val = self._map(float, vals)
@@ -968,7 +971,10 @@ cdef class Reader(object):
             # we don't need to split single entries
             if entry_num == 1 or ',' not in vals:
                 if entry_type == 'Integer':
-                    sampdict[fmt] = int(vals)
+                    try:
+                        sampdict[fmt] = int(vals)
+                    except ValueError:
+                        sampdict[fmt] = float(vals)
                 elif entry_type == 'Float':
                     sampdict[fmt] = float(vals)
                 else:
