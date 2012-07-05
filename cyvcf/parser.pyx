@@ -181,14 +181,11 @@ cdef class _Call(object):
         if self.called:
             # grab the numeric alleles of the gt string; tokenize by phasing
             phase_char = '/' if not self.phased else '|'
-            (a1, a2) = self.gt_nums.split(phase_char)
+            alleles = self.gt_nums.split(phase_char)
             # lookup and return the actual DNA alleles
             try:
-                tmp = self.site.alleles[int(a1)] + \
-                       phase_char + \
-                       self.site.alleles[int(a2)]
-                return tmp
-            except:
+                return phase_char.join([self.site.alleles[int(a)] for a in alleles])
+            except KeyError:
                 sys.stderr.write("Allele number not found in list of alleles\n")
         else:
             return None
@@ -208,12 +205,17 @@ cdef class _Call(object):
         # extract the numeric alleles of the gt string
         if self.called:
             # grab the numeric alleles of the gt string; tokenize by phasing
-            (a1, a2) = self.gt_nums.split("/") \
-                if not self.phased else self.gt_nums.split("|")
-            if a1 == a2: 
-                if a1 == "0": return 0
+            phase_char = '/' if not self.phased else '|'
+            alleles = self.gt_nums.split(phase_char)
+            if len(alleles) == 2:
+                (a1, a2) = alleles
+                if a1 == a2: 
+                    if a1 == "0": return 0
+                    else: return 3
+                else: return 1
+            elif len(alleles) == 1:
+                if alleles[0] == "0": return 0
                 else: return 3
-            else: return 1
         else: return None
 
     @property
