@@ -590,7 +590,7 @@ class TestFilter(unittest.TestCase):
                 assert 'sq30' in r.FILTER
                 n += 1
             else:
-                assert 'sq30' not in r.FILTER
+                assert r.FILTER is None or 'sq30' not in r.FILTER
         assert n == 2
 
 
@@ -635,9 +635,9 @@ class TestUtils(unittest.TestCase):
 
     def test_walk(self):
         # easy case: all same sites
-        reader1 = vcf.Reader(fh('example-4.0.vcf'))
-        reader2 = vcf.Reader(fh('example-4.0.vcf'))
-        reader3 = vcf.Reader(fh('example-4.0.vcf'))
+        reader1 = cyvcf.Reader(fh('example-4.0.vcf'))
+        reader2 = cyvcf.Reader(fh('example-4.0.vcf'))
+        reader3 = cyvcf.Reader(fh('example-4.0.vcf'))
 
         n = 0
         for x in utils.walk_together(reader1, reader2, reader3):
@@ -649,8 +649,8 @@ class TestUtils(unittest.TestCase):
         # artificial case 2 from the left, 2 from the right, 2 together, 1 from the right, 1 from the left
 
         expected = 'llrrttrl'
-        reader1 = vcf.Reader(fh('walk_left.vcf'))
-        reader2 = vcf.Reader(fh('example-4.0.vcf'))
+        reader1 = cyvcf.Reader(fh('walk_left.vcf'))
+        reader2 = cyvcf.Reader(fh('example-4.0.vcf'))
 
         for ex, recs in zip(expected, utils.walk_together(reader1, reader2)):
 
