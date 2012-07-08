@@ -181,14 +181,11 @@ cdef class _Call(object):
         if self.called:
             # grab the numeric alleles of the gt string; tokenize by phasing
             phase_char = '/' if not self.phased else '|'
-            (a1, a2) = self.gt_nums.split(phase_char)
+            alleles = self.gt_nums.split(phase_char)
             # lookup and return the actual DNA alleles
             try:
-                tmp = self.site.alleles[int(a1)] + \
-                       phase_char + \
-                       self.site.alleles[int(a2)]
-                return tmp
-            except:
+                return phase_char.join([self.site.alleles[int(a)] for a in alleles])
+            except KeyError:
                 sys.stderr.write("Allele number not found in list of alleles\n")
         else:
             return None
@@ -208,12 +205,17 @@ cdef class _Call(object):
         # extract the numeric alleles of the gt string
         if self.called:
             # grab the numeric alleles of the gt string; tokenize by phasing
-            (a1, a2) = self.gt_nums.split("/") \
-                if not self.phased else self.gt_nums.split("|")
-            if a1 == a2: 
-                if a1 == "0": return 0
+            phase_char = '/' if not self.phased else '|'
+            alleles = self.gt_nums.split(phase_char)
+            if len(alleles) == 2:
+                (a1, a2) = alleles
+                if a1 == a2: 
+                    if a1 == "0": return 0
+                    else: return 3
+                else: return 1
+            elif len(alleles) == 1:
+                if alleles[0] == "0": return 0
                 else: return 3
-            else: return 1
         else: return None
 
     @property
@@ -478,7 +480,10 @@ cdef class _Record(object):
         het = self.num_het
         hom_alt = self.num_hom_alt
         num_chroms = float(2.0*self.num_called)
-        return float(het + 2*hom_alt)/float(num_chroms)
+        if num_chroms == 0.0:
+            return 0.0
+        else:
+            return float(het + 2*hom_alt)/float(num_chroms)
 
     @property
     def nucl_diversity(self):
@@ -853,7 +858,10 @@ cdef class Reader(object):
             
             if entry_type == b'Integer':
                 vals = entry[1].split(',')
-                val = self._map(int, vals)
+                try:
+                    val = self._map(int, vals)
+                except ValueError:
+                    val = self._map(float, vals)
             elif entry_type == b'Float':
                 vals = entry[1].split(',')
                 val = self._map(float, vals)
@@ -968,7 +976,10 @@ cdef class Reader(object):
             # we don't need to split single entries
             if entry_num == 1 or ',' not in vals:
                 if entry_type == 'Integer':
-                    sampdict[fmt] = int(vals)
+                    try:
+                        sampdict[fmt] = int(vals)
+                    except ValueError:
+                        sampdict[fmt] = float(vals)
                 elif entry_type == 'Float':
                     sampdict[fmt] = float(vals)
                 else:
