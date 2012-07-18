@@ -334,7 +334,7 @@ cdef class _Record(object):
     def __repr__(self):
         if self.has_genotypes == True:
             core = "\t".join([self.CHROM, str(self.POS), str(self.REF), self._format_alt(),
-                          self._format_qual(), self.FILTER or '.', self._format_info(), self.FORMAT])
+                          self._format_qual() or '.', self.FILTER or '.', self._format_info(), self.FORMAT])
             samples = "\t".join([self._format_sample(sample) for sample in self.samples])
             return core + "\t" + samples
         else:
@@ -1165,7 +1165,6 @@ class Writer(object):
         for line in template.formats.values():
             stream.write('##FORMAT=<ID=%s,Number=%s,Type=%s,Description="%s">\n' % tuple(self._map(str, line)))
         for line in template.filters.values():
-            print line
             stream.write('##FILTER=<ID=%s,Description="%s">\n' % tuple(self._map(str, line)))
 
         self._write_header()
