@@ -223,9 +223,13 @@ cdef class _Call(object):
         '''
         # extract the numeric alleles of the gt string
         try:
-            return self.data['DP']
+            depth = self.data['DP']
+            if depth is not None:
+                return depth
+            else:
+                return -1
         except KeyError:
-            return None
+            return -1
 
     @property
     def is_variant(self):
