@@ -504,6 +504,23 @@ class TestCall(unittest.TestCase):
                 self.assertEqual([0,0,0], gt_types)
             elif var.POS == 1234567:
                 self.assertEqual([None,1,3], gt_types)
+                
+    def test_gt_depths(self):
+        reader = cyvcf.Reader(fh('example-4.0.vcf'))
+        for var in reader:
+            for s in var:
+                print s.data
+            gt_depths = [s.gt_depth for s in var.samples]
+            if var.POS == 14370:
+                self.assertEqual([1,8,5], gt_depths)
+            elif var.POS == 17330:
+                self.assertEqual([3,5,3], gt_depths)
+            elif var.POS == 1110696:
+                self.assertEqual([6,0,4], gt_depths)
+            elif var.POS == 1230237:
+                self.assertEqual([7,4,2], gt_depths)
+            elif var.POS == 1234567:
+                self.assertEqual([4,2,3], gt_depths)
 
 class TestTabix(unittest.TestCase):
 

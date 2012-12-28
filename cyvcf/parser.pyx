@@ -26,9 +26,11 @@ RESERVED_FORMAT = {
 _Info = collections.namedtuple('Info', ['id', 'num', 'type', 'desc'])
 _Filter = collections.namedtuple('Filter', ['id', 'desc'])
 _Format = collections.namedtuple('Format', ['id', 'num', 'type', 'desc'])
-_SampleInfo = collections.namedtuple('SampleInfo', ['samples', 'gt_bases', 'gt_types', 'gt_phases',
-                                                    'num_hom_ref', 'num_het', 'num_hom_alt', 
-                                                    'num_unknown', 'num_called'])
+_SampleInfo = collections.namedtuple('SampleInfo', ['samples', 'gt_bases', \
+                                                    'gt_types', 'gt_phases', \
+                                                    'gt_depths', 'num_hom_ref',
+                                                    'num_het', 'num_hom_alt', 
+                                                    'num_unknown','num_called'])
 
 class _vcf_metadata_parser(object):
     '''Parse the metadat in the header of a VCF file.'''
@@ -158,10 +160,6 @@ cdef class _Call(object):
     property sample:
         """Return the name of the sample"""
         def __get__(self): return self.sample
-
-    property gt_nums:
-        """Return the numeric genotype alleles for the sample"""
-        def __get__(self): return self.gt_nums
             
     property called:
         def __get__(self): return self.called
@@ -219,6 +217,17 @@ cdef class _Call(object):
         else: return None
 
     @property
+    def gt_depth(self):
+        '''The depth of aligned sequences that led to the genotype
+        call for this sample.
+        '''
+        # extract the numeric alleles of the gt string
+        try:
+            return self.data['DP']
+        except KeyError:
+            return None
+
+    @property
     def is_variant(self):
         """ Return True if not a reference call """
         if not self.called:
@@ -245,7 +254,7 @@ cdef class _Record(object):
     """
     
     # initialize Cython variables for all of the base attrs.
-    cdef list alleles, samples, ALT, gt_bases, gt_types, gt_phases
+    cdef list alleles, samples, ALT, gt_bases, gt_types, gt_phases, gt_depths
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
     cdef bytes CHROM, ID, REF, FORMAT
@@ -259,7 +268,8 @@ cdef class _Record(object):
                         char *REF, list ALT, object QUAL=None, 
                         object FILTER=None, dict INFO=None, object FORMAT=None, 
                         dict sample_indexes=None, list samples=None,
-                        list gt_bases=None, list gt_types=None, list gt_phases=None,
+                        list gt_bases=None, list gt_types=None, 
+                        list gt_phases=None, list gt_depths=None,
                         int num_hom_ref=0, int num_het=0, int num_hom_alt=0, 
                         int num_unknown=0, int num_called=0):
         # CORE VCF fields
@@ -282,6 +292,7 @@ cdef class _Record(object):
         self.gt_bases = gt_bases
         self.gt_types = gt_types
         self.gt_phases = gt_phases
+        self.gt_depths = gt_depths
         self.num_hom_ref = num_hom_ref
         self.num_het = num_het
         self.num_hom_alt = num_hom_alt
@@ -438,6 +449,12 @@ cdef class _Record(object):
            this would return [False, True, False]
         """
         def __get__(self): return self.gt_phases
+        
+    property gt_depths:
+        """A list of integers indicating the depth of sequence coverage for
+           each genotype.
+        """
+        def __get__(self): return self.gt_depths
 
     property num_hom_ref:
         """The number of homozygotes for the REF allele."""
@@ -919,18 +936,21 @@ cdef class Reader(object):
         cdef list gt_alleles = []# A/A, A|G, G/G, etc.
         cdef list gt_types   = []# 0, 1, 2, etc.
         cdef list gt_phases  = []# T, F, T, etc.
+        cdef list gt_depths  = []# 10, 37, 0, etc.
         i = 0
         for i in xrange(self.num_samples):
             name = self.samples[i]
             sample = samples[i]
 
-            sampdict = self._parse_sample(sample, samp_fmt, samp_fmt_types, samp_fmt_nums)
+            sampdict = self._parse_sample(sample, samp_fmt, \
+                                          samp_fmt_types, samp_fmt_nums)
             call = _Call(self.curr_record, name, sampdict)
             samp_data.append(call)
 
             alleles = call.gt_bases
             type = call.gt_type
             phased = call.phased
+            depth = call.gt_depth
             
             # add to the "all-samples" lists of GT info
             if alleles is not None:
@@ -941,6 +961,7 @@ cdef class Reader(object):
                 gt_types.append(2)
 
             gt_phases.append(phased)
+            gt_depths.append(depth)
             
             # 0 / 00000000 hom ref
             # 1 / 00000001 het
@@ -954,9 +975,10 @@ cdef class Reader(object):
             elif type == None: num_unknown += 1
 
         num_called = num_hom_ref + num_het + num_hom_alt
-        return _SampleInfo(samp_data, gt_alleles, gt_types, gt_phases,
-                           num_hom_ref, num_het, num_hom_alt, num_unknown,
-                           num_called)
+        return _SampleInfo(samp_data, gt_alleles, gt_types, 
+                           gt_phases, gt_depths,
+                           num_hom_ref, num_het, 
+                           num_hom_alt, num_unknown, num_called)
 
 
     def _parse_sample(self, char *sample, list samp_fmt, 
@@ -1054,6 +1076,7 @@ cdef class Reader(object):
             self.curr_record.gt_bases = sample_info.gt_bases
             self.curr_record.gt_types = sample_info.gt_types
             self.curr_record.gt_phases = sample_info.gt_phases
+            self.curr_record.gt_depths = sample_info.gt_depths
             self.curr_record.num_hom_ref = sample_info.num_hom_ref
             self.curr_record.num_het = sample_info.num_het
             self.curr_record.num_hom_alt = sample_info.num_hom_alt
@@ -1110,6 +1133,7 @@ cdef class Reader(object):
             curr_record.gt_bases = sample_info.gt_bases
             curr_record.gt_types = sample_info.gt_types
             curr_record.gt_phases = sample_info.gt_phases
+            curr_record.gt_depths = sample_info.gt_depths
             curr_record.num_hom_ref = sample_info.num_hom_ref
             curr_record.num_het = sample_info.num_het
             curr_record.num_hom_alt = sample_info.num_hom_alt
