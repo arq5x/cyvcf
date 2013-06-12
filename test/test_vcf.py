@@ -521,6 +521,43 @@ class TestCall(unittest.TestCase):
                 self.assertEqual([7,4,2], gt_depths)
             elif var.POS == 1234567:
                 self.assertEqual([4,2,3], gt_depths)
+                
+    def test_gt_ref_depths(self):
+
+        reader = cyvcf.Reader(fh('gatk.vcf'))
+        for var in reader:
+            gt_ref_depths = [s.gt_ref_depth for s in var.samples]
+            if var.POS == 42522392:
+                self.assertEqual([6,138,169,249,248,250,250], gt_ref_depths)
+            elif var.POS == 42522613:
+                self.assertEqual([13,118,241,161,110,106,116], gt_ref_depths)
+            elif var.POS == 42527891:
+                self.assertEqual([-1,238,246,239,232,233,238], gt_ref_depths)
+                
+    def test_gt_alt_depths(self):
+
+        reader = cyvcf.Reader(fh('gatk.vcf'))
+        for var in reader:
+            gt_alt_depths = [s.gt_alt_depth for s in var.samples]
+            if var.POS == 42522392:
+                self.assertEqual([0,107,77,0,1,0,0], gt_alt_depths)
+            elif var.POS == 42522613:
+                self.assertEqual([4,127,0,85,132,135,126], gt_alt_depths)
+            elif var.POS == 42527891:
+                self.assertEqual([-1,7,3,11,16,14,11], gt_alt_depths)
+
+    def test_gt_quals(self):
+
+        reader = cyvcf.Reader(fh('gatk.vcf'))
+        for var in reader:
+            gt_quals = [s.gt_qual for s in var.samples]
+            if var.POS == 42522392:
+                self.assertEqual([18.04,99,99,99,99,99,99], gt_quals)
+            elif var.POS == 42522613:
+                self.assertEqual([62.64,99,99,99,99,99,99], gt_quals)
+            elif var.POS == 42527891:
+                self.assertEqual([-1,13.70,5.97,31.42,49.09,52.10,12.71], gt_quals)
+
 
 class TestTabix(unittest.TestCase):
 

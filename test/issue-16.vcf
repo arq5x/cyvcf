@@ -18,4 +18,3 @@
 ##FORMAT=<ID=HQ,Number=2,Type=Integer,Description="Haplotype Quality">
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NA00001	NA00002	NA00003
 20	1234568	.	G	.	.	PASS	NS=3;DP=9;AA=G	GT	./.	./.	./.
-

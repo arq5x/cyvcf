@@ -26,11 +26,20 @@ RESERVED_FORMAT = {
 _Info = collections.namedtuple('Info', ['id', 'num', 'type', 'desc'])
 _Filter = collections.namedtuple('Filter', ['id', 'desc'])
 _Format = collections.namedtuple('Format', ['id', 'num', 'type', 'desc'])
-_SampleInfo = collections.namedtuple('SampleInfo', ['samples', 'gt_bases', \
-                                                    'gt_types', 'gt_phases', \
-                                                    'gt_depths', 'num_hom_ref',
-                                                    'num_het', 'num_hom_alt', 
-                                                    'num_unknown','num_called'])
+_SampleInfo = collections.namedtuple('SampleInfo', 'samples, gt_bases, \
+                                                    gt_types, gt_phases, \
+                                                    gt_depths, gt_ref_depths, \
+                                                    gt_alt_depths, gt_quals, \
+                                                    num_hom_ref, num_het, \
+                                                    num_hom_alt, num_unknown, \
+                                                    num_called')
+
+
+HOM_REF = 0
+HET = 1
+HOM_ALT = 3
+UNKNOWN = 2
+
 
 class _vcf_metadata_parser(object):
     '''Parse the metadat in the header of a VCF file.'''
@@ -201,20 +210,28 @@ cdef class _Call(object):
            uncalled = 2
         '''
         # extract the numeric alleles of the gt string
+        gt_type = None
         if self.called:
             # grab the numeric alleles of the gt string; tokenize by phasing
             phase_char = '/' if not self.phased else '|'
             alleles = self.gt_nums.split(phase_char)
+            
             if len(alleles) == 2:
                 (a1, a2) = alleles
-                if a1 == a2: 
-                    if a1 == "0": return 0
-                    else: return 3
-                else: return 1
+                if a1 == a2:
+                    if a1 == "0": 
+                        gt_type = HOM_REF
+                    else: 
+                        gt_type = HOM_ALT
+                else: 
+                    gt_type = HET
             elif len(alleles) == 1:
-                if alleles[0] == "0": return 0
-                else: return 3
-        else: return None
+                if alleles[0] == "0": 
+                    gt_type = HOM_REF
+                else: 
+                    gt_type = HOM_ALT
+
+        return gt_type
 
     @property
     def gt_depth(self):
@@ -230,20 +247,76 @@ cdef class _Call(object):
                 return -1
         except KeyError:
             return -1
+            
+    @property
+    def gt_ref_depth(self):
+        '''The depth of aligned sequences that supported the
+        reference allele for this sample.
+        '''
+        # extract the numeric alleles of the gt string
+        try:
+            depths = self.data['AD']
+            if depths is not None:
+                # require bi-allelic
+                if len(depths) != 2:
+                    return -1
+                else:
+                    # ref allele is first
+                    return depths[0]
+            else:
+                return -1
+        except KeyError:
+            return -1
+
+    @property
+    def gt_alt_depth(self):
+        '''The depth of aligned sequences that supported the
+        alternate allele for this sample.
+        '''
+        # extract the numeric alleles of the gt string
+        try:
+            depths = self.data['AD']
+            if depths is not None:
+                # require bi-allelic
+                if len(depths) != 2:
+                    return -1
+                else:
+                    # alt allele is second
+                    return depths[1]
+            else:
+                return -1
+        except KeyError:
+            return -1
+
+            
+    @property
+    def gt_qual(self):
+        '''The PHRED-scaled quality of genotype
+        call for this sample.
+        '''
+        # extract the numeric alleles of the gt string
+        try:
+            qual = self.data['GQ']
+            if qual is not None:
+                return qual
+            else:
+                return -1
+        except KeyError:
+            return -1
 
     @property
     def is_variant(self):
         """ Return True if not a reference call """
         if not self.called:
             return None
-        return self.gt_type != 0
+        return self.gt_type != HOM_REF
 
     @property
     def is_het(self):
         """ Return True for heterozygous calls """
         if not self.called:
             return None
-        return self.gt_type == 1
+        return self.gt_type == HET
 
 
 cdef class _Record(object):
@@ -258,7 +331,8 @@ cdef class _Record(object):
     """
     
     # initialize Cython variables for all of the base attrs.
-    cdef list alleles, samples, ALT, gt_bases, gt_types, gt_phases, gt_depths
+    cdef list alleles, samples, ALT, gt_bases, gt_types, gt_phases, \
+              gt_depths, gt_ref_depths, gt_alt_depths, gt_quals
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
     cdef bytes CHROM, ID, REF, FORMAT
@@ -274,7 +348,9 @@ cdef class _Record(object):
                         dict sample_indexes=None, list samples=None,
                         list gt_bases=None, list gt_types=None, 
                         list gt_phases=None, list gt_depths=None,
-                        int num_hom_ref=0, int num_het=0, int num_hom_alt=0, 
+                        list gt_ref_depths=None, list gt_alt_depths=None,
+                        list gt_quals=None, int num_hom_ref=0,
+                        int num_het=0, int num_hom_alt=0,
                         int num_unknown=0, int num_called=0):
         # CORE VCF fields
         self.CHROM = CHROM
@@ -297,6 +373,9 @@ cdef class _Record(object):
         self.gt_types = gt_types
         self.gt_phases = gt_phases
         self.gt_depths = gt_depths
+        self.gt_ref_depths = gt_ref_depths
+        self.gt_alt_depths = gt_alt_depths
+        self.gt_quals = gt_quals
         self.num_hom_ref = num_hom_ref
         self.num_het = num_het
         self.num_hom_alt = num_hom_alt
@@ -453,12 +532,30 @@ cdef class _Record(object):
            this would return [False, True, False]
         """
         def __get__(self): return self.gt_phases
-        
+
     property gt_depths:
         """A list of integers indicating the depth of sequence coverage for
            each genotype.
         """
         def __get__(self): return self.gt_depths
+
+    property gt_ref_depths:
+        """A list of integers indicating the depth of sequence coverage for
+           the reference allele for each sample.
+        """
+        def __get__(self): return self.gt_ref_depths
+
+    property gt_alt_depths:
+        """A list of integers indicating the depth of sequence coverage for
+           the alternate allele for each sample.
+        """
+        def __get__(self): return self.gt_alt_depths
+
+    property gt_quals:
+        """A list of integers indicating the PHRED scale genotype quality 
+           for each sample.
+        """
+        def __get__(self): return self.gt_quals
 
     property num_hom_ref:
         """The number of homozygotes for the REF allele."""
@@ -481,7 +578,7 @@ cdef class _Record(object):
     property num_called:
         """The number of called (i.e., NOT ./.) genotypes."""
         def __get__(self):
-            return self.num_unknown
+            return self.num_called
 
     @property
     def call_rate(self):
@@ -532,7 +629,7 @@ cdef class _Record(object):
 
     def get_hom_alts(self):
         """ The list of hom alt genotypes"""
-        return [s for s in self.samples if s.gt_type == 2]
+        return [s for s in self.samples if s.gt_type == 3]
 
     def get_hets(self):
         """ The list of het genotypes"""
@@ -941,6 +1038,9 @@ cdef class Reader(object):
         cdef list gt_types   = []# 0, 1, 2, etc.
         cdef list gt_phases  = []# T, F, T, etc.
         cdef list gt_depths  = []# 10, 37, 0, etc.
+        cdef list gt_ref_depths  = []# 3, 32, 0, etc.
+        cdef list gt_alt_depths  = []# 7, 5, 0, etc.
+        cdef list gt_quals  = []# 10, 30, 20, etc.
         i = 0
         for i in xrange(self.num_samples):
             name = self.samples[i]
@@ -955,6 +1055,9 @@ cdef class Reader(object):
             type = call.gt_type
             phased = call.phased
             depth = call.gt_depth
+            ref_depth = call.gt_ref_depth
+            alt_depth = call.gt_alt_depth
+            qual = call.gt_qual
             
             # add to the "all-samples" lists of GT info
             if alleles is not None:
@@ -966,6 +1069,9 @@ cdef class Reader(object):
 
             gt_phases.append(phased)
             gt_depths.append(depth)
+            gt_ref_depths.append(ref_depth)
+            gt_alt_depths.append(alt_depth)
+            gt_quals.append(qual)
             
             # 0 / 00000000 hom ref
             # 1 / 00000001 het
@@ -973,17 +1079,20 @@ cdef class Reader(object):
             # 3 / 00000011 hom alt
             
             # tally the appropriate GT count
-            if type == 0: num_hom_ref += 1
-            elif type == 1: num_het += 1
-            elif type == 3: num_hom_alt += 1
+            if type == HOM_REF: num_hom_ref += 1
+            elif type == HET: num_het += 1
+            elif type == HOM_ALT: num_hom_alt += 1
             elif type == None: num_unknown += 1
 
         num_called = num_hom_ref + num_het + num_hom_alt
-        return _SampleInfo(samp_data, gt_alleles, gt_types, 
-                           gt_phases, gt_depths,
-                           num_hom_ref, num_het, 
-                           num_hom_alt, num_unknown, num_called)
 
+        return _SampleInfo(samples=samp_data, gt_bases=gt_alleles,
+                           gt_types=gt_types, gt_phases=gt_phases,
+                           gt_depths=gt_depths, gt_ref_depths=gt_ref_depths,
+                           gt_alt_depths=gt_alt_depths, gt_quals=gt_quals,
+                           num_hom_ref=num_hom_ref, num_het=num_het,
+                           num_hom_alt=num_hom_alt, num_unknown=num_unknown,
+                           num_called=num_called)
 
     def _parse_sample(self, char *sample, list samp_fmt, 
                             list samp_fmt_types, list samp_fmt_nums):
@@ -1081,6 +1190,9 @@ cdef class Reader(object):
             self.curr_record.gt_types = sample_info.gt_types
             self.curr_record.gt_phases = sample_info.gt_phases
             self.curr_record.gt_depths = sample_info.gt_depths
+            self.curr_record.gt_ref_depths = sample_info.gt_ref_depths
+            self.curr_record.gt_alt_depths = sample_info.gt_alt_depths
+            self.curr_record.gt_quals = sample_info.gt_quals
             self.curr_record.num_hom_ref = sample_info.num_hom_ref
             self.curr_record.num_het = sample_info.num_het
             self.curr_record.num_hom_alt = sample_info.num_hom_alt
@@ -1138,6 +1250,9 @@ cdef class Reader(object):
             curr_record.gt_types = sample_info.gt_types
             curr_record.gt_phases = sample_info.gt_phases
             curr_record.gt_depths = sample_info.gt_depths
+            curr_record.gt_ref_depths = sample_info.gt_ref_depths
+            curr_record.gt_alt_depths = sample_info.gt_alt_depths
+            curr_record.gt_quals = sample_info.gt_quals
             curr_record.num_hom_ref = sample_info.num_hom_ref
             curr_record.num_het = sample_info.num_het
             curr_record.num_hom_alt = sample_info.num_hom_alt
