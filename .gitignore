@@ -1,0 +1,6 @@
+*.pyc
+build
+cyvcf.egg-info
+dist
+cyvcf/parser.c
+ 
