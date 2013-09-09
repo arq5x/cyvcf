@@ -258,7 +258,7 @@ cdef class _Call(object):
             depths = self.data['AD']
             if depths is not None:
                 # require bi-allelic
-                if len(depths) != 2:
+                if not isinstance(depths, (list, tuple)) or len(depths) != 2:
                     return -1
                 else:
                     # ref allele is first
@@ -278,7 +278,7 @@ cdef class _Call(object):
             depths = self.data['AD']
             if depths is not None:
                 # require bi-allelic
-                if len(depths) != 2:
+                if not isinstance(depths, (list, tuple)) or len(depths) != 2:
                     return -1
                 else:
                     # alt allele is second
