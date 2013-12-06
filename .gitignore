@@ -1,5 +1,5 @@
-PyVCF.egg-info
-build
-dist
 *.pyc
-*.so
+build
+cyvcf.egg-info
+dist
+cyvcf/parser.c
