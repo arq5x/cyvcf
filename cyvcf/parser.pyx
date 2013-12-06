@@ -254,7 +254,7 @@ cdef class _Call(object):
         reference allele for this sample.
         '''
         # extract the numeric alleles of the gt string
-        try:
+        if 'AD' in self.data:
             depths = self.data['AD']
             if depths is not None:
                 # require bi-allelic
@@ -265,7 +265,9 @@ cdef class _Call(object):
                     return depths[0]
             else:
                 return -1
-        except KeyError:
+        elif 'RO' in self.data:
+            return self.data['RO']
+        else:
             return -1
 
     @property
@@ -274,21 +276,22 @@ cdef class _Call(object):
         alternate allele for this sample.
         '''
         # extract the numeric alleles of the gt string
-        try:
+        if 'AD' in self.data:
             depths = self.data['AD']
             if depths is not None:
                 # require bi-allelic
                 if not isinstance(depths, (list, tuple)) or len(depths) != 2:
                     return -1
                 else:
-                    # alt allele is second
-                    return depths[1]
+                    # ref allele is first
+                    return depths[0]
             else:
                 return -1
-        except KeyError:
+        elif 'AO' in self.data:
+            return self.data['AO']
+        else:
             return -1
 
-            
     @property
     def gt_qual(self):
         '''The PHRED-scaled quality of genotype
