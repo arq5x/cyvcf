@@ -286,8 +286,8 @@ cdef class _Call(object):
                 if not isinstance(depths, (list, tuple)) or len(depths) != 2:
                     return -1
                 else:
-                    # ref allele is first
-                    return depths[0]
+                    # alt allele is second
+                    return depths[1]
             else:
                 return -1
         elif 'AO' in self.data:
