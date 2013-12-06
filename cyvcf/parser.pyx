@@ -266,7 +266,10 @@ cdef class _Call(object):
             else:
                 return -1
         elif 'RO' in self.data:
-            return self.data['RO']
+            if self.data['RO'] is not None:
+                return self.data['RO']
+            else:
+                return -1
         else:
             return -1
 
@@ -288,7 +291,10 @@ cdef class _Call(object):
             else:
                 return -1
         elif 'AO' in self.data:
-            return self.data['AO']
+            if self.data['AO'] is not None:
+                return self.data['AO']
+            else:
+                return -1
         else:
             return -1
 
