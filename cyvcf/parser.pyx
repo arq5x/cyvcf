@@ -191,7 +191,8 @@ cdef class _Call(object):
             alleles = self.gt_nums.split(phase_char)
             # lookup and return the actual DNA alleles
             try:
-                return phase_char.join([self.site.alleles[int(a)] for a in alleles])
+                return phase_char.join([self.site.alleles[int(a)] \
+                                        if a != '.' else '.' for a in alleles])
             except KeyError:
                 sys.stderr.write("Allele number not found in list of alleles\n")
         else:
@@ -279,6 +280,8 @@ cdef class _Call(object):
         alternate allele for this sample.
         '''
         # extract the numeric alleles of the gt string
+
+        # GATK style
         if 'AD' in self.data:
             depths = self.data['AD']
             if depths is not None:
@@ -290,9 +293,15 @@ cdef class _Call(object):
                     return depths[1]
             else:
                 return -1
+        # Freebayes style
         elif 'AO' in self.data:
-            if self.data['AO'] is not None:
-                return self.data['AO']
+            depth = self.data['AO']
+            if depth is not None:
+                # require bi-allelic
+                if isinstance(depth, list):
+                    return -1
+                else:
+                    return depth
             else:
                 return -1
         else:
@@ -436,12 +445,12 @@ cdef class _Record(object):
                     
     def __repr__(self):
         if self.has_genotypes == True:
-            core = "\t".join([self.CHROM, str(self.POS), str(self.REF), self._format_alt(),
+            core = "\t".join([self.CHROM, str(self.POS), str(self.ID), str(self.REF), self._format_alt(),
                           self._format_qual() or '.', self.FILTER or '.', self._format_info(), self.FORMAT])
             samples = "\t".join([self._format_sample(sample) for sample in self.samples])
             return core + "\t" + samples
         else:
-            return "\t".join([self.CHROM, str(self.POS), str(self.REF), self._format_alt(),
+            return "\t".join([self.CHROM, str(self.POS), str(self.ID), str(self.REF), self._format_alt(),
                           self._format_qual() or '.', self.FILTER or '.', self._format_info()])
             
 
