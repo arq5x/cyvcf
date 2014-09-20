@@ -383,6 +383,10 @@ cdef class _Record(object):
         # DERIVED fields
         self.start = self.POS - 1
         self.end = self.start + len(self.REF)
+        if 'END' in self.INFO:
+             self.end = self.INFO['END']
+        else:
+             self.end = self.start + len(self.REF)
         self.alleles = [self.REF]
         self.alleles.extend(self.ALT)
         self.samples = samples
@@ -1169,7 +1173,7 @@ cdef class Reader(object):
         #CHROM
         cdef bytes chrom = row[0]
         if self._prepend_chr:
-            chrom = 'chr' + chrom
+            chrom = 'chr' + str(chrom)
         # POS
         cdef int pos = int(row[1])
         # ID
@@ -1229,7 +1233,7 @@ cdef class Reader(object):
         #CHROM
         cdef bytes chrom = row[0]
         if other._prepend_chr:
-            chrom = 'chr' + chrom
+            chrom = 'chr' + str(chrom)
         # POS
         cdef int pos = int(row[1])
         # ID
