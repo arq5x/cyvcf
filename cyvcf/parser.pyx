@@ -30,6 +30,7 @@ _SampleInfo = collections.namedtuple('SampleInfo', 'samples, gt_bases, \
                                                     gt_types, gt_phases, \
                                                     gt_depths, gt_ref_depths, \
                                                     gt_alt_depths, gt_quals, \
+                                                    gt_copy_numbers, \
                                                     num_hom_ref, num_het, \
                                                     num_hom_alt, num_unknown, \
                                                     num_called')
@@ -323,6 +324,20 @@ cdef class _Call(object):
             return -1
 
     @property
+    def gt_copy_number(self):
+        '''The copy number prediction for this sample.
+        '''
+        # extract the numeric alleles of the gt string
+        try:
+            qual = self.data['CN']
+            if qual is not None:
+                return qual
+            else:
+                return -1
+        except KeyError:
+            return -1
+
+    @property
     def is_variant(self):
         """ Return True if not a reference call """
         if not self.called:
@@ -350,7 +365,7 @@ cdef class _Record(object):
     
     # initialize Cython variables for all of the base attrs.
     cdef list alleles, samples, ALT, gt_bases, gt_types, gt_phases, \
-              gt_depths, gt_ref_depths, gt_alt_depths, gt_quals
+              gt_depths, gt_ref_depths, gt_alt_depths, gt_quals, gt_copy_numbers
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
     cdef bytes CHROM, ID, REF, FORMAT
@@ -367,7 +382,7 @@ cdef class _Record(object):
                         list gt_bases=None, list gt_types=None, 
                         list gt_phases=None, list gt_depths=None,
                         list gt_ref_depths=None, list gt_alt_depths=None,
-                        list gt_quals=None, int num_hom_ref=0,
+                        list gt_quals=None, list gt_copy_numbers=None, int num_hom_ref=0,
                         int num_het=0, int num_hom_alt=0,
                         int num_unknown=0, int num_called=0):
         # CORE VCF fields
@@ -398,6 +413,7 @@ cdef class _Record(object):
         self.gt_ref_depths = gt_ref_depths
         self.gt_alt_depths = gt_alt_depths
         self.gt_quals = gt_quals
+        self.gt_copy_numbers = gt_copy_numbers
         self.num_hom_ref = num_hom_ref
         self.num_het = num_het
         self.num_hom_alt = num_hom_alt
@@ -578,6 +594,12 @@ cdef class _Record(object):
            for each sample.
         """
         def __get__(self): return self.gt_quals
+
+    property gt_copy_numbers:
+        """A list of integers indicating the predicted copy number 
+           for each sample.
+        """
+        def __get__(self): return self.gt_copy_numbers
 
     property num_hom_ref:
         """The number of homozygotes for the REF allele."""
@@ -1063,6 +1085,7 @@ cdef class Reader(object):
         cdef list gt_ref_depths  = []# 3, 32, 0, etc.
         cdef list gt_alt_depths  = []# 7, 5, 0, etc.
         cdef list gt_quals  = []# 10, 30, 20, etc.
+        cdef list gt_copy_numbers  = []# 2, 1, 4, etc.
         i = 0
         for i in xrange(self.num_samples):
             name = self.samples[i]
@@ -1080,6 +1103,7 @@ cdef class Reader(object):
             ref_depth = call.gt_ref_depth
             alt_depth = call.gt_alt_depth
             qual = call.gt_qual
+            copy_number = call.gt_copy_number
             
             # add to the "all-samples" lists of GT info
             if alleles is not None:
@@ -1094,6 +1118,7 @@ cdef class Reader(object):
             gt_ref_depths.append(ref_depth)
             gt_alt_depths.append(alt_depth)
             gt_quals.append(qual)
+            gt_copy_numbers.append(copy_number)
             
             # 0 / 00000000 hom ref
             # 1 / 00000001 het
@@ -1112,6 +1137,7 @@ cdef class Reader(object):
                            gt_types=gt_types, gt_phases=gt_phases,
                            gt_depths=gt_depths, gt_ref_depths=gt_ref_depths,
                            gt_alt_depths=gt_alt_depths, gt_quals=gt_quals,
+                           gt_copy_numbers=gt_copy_numbers,
                            num_hom_ref=num_hom_ref, num_het=num_het,
                            num_hom_alt=num_hom_alt, num_unknown=num_unknown,
                            num_called=num_called)
@@ -1215,6 +1241,7 @@ cdef class Reader(object):
             self.curr_record.gt_ref_depths = sample_info.gt_ref_depths
             self.curr_record.gt_alt_depths = sample_info.gt_alt_depths
             self.curr_record.gt_quals = sample_info.gt_quals
+            self.curr_record.gt_copy_numbers = sample_info.gt_copy_numbers
             self.curr_record.num_hom_ref = sample_info.num_hom_ref
             self.curr_record.num_het = sample_info.num_het
             self.curr_record.num_hom_alt = sample_info.num_hom_alt
@@ -1275,6 +1302,7 @@ cdef class Reader(object):
             curr_record.gt_ref_depths = sample_info.gt_ref_depths
             curr_record.gt_alt_depths = sample_info.gt_alt_depths
             curr_record.gt_quals = sample_info.gt_quals
+            curr_record.gt_copy_numbers = sample_info.gt_copy_numbers
             curr_record.num_hom_ref = sample_info.num_hom_ref
             curr_record.num_het = sample_info.num_het
             curr_record.num_hom_alt = sample_info.num_hom_alt
