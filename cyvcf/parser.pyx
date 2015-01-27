@@ -1152,7 +1152,7 @@ cdef class Reader(object):
                 samp_fmt, samp_fmt_types, samp_fmt_nums, sample.split(':')):
 
             # short circuit the most common
-            if vals == '.' or vals == './.':
+            if vals == '.' or vals == './.' or vals == "":
                 sampdict[fmt] = None
                 continue
 
