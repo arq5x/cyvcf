@@ -121,13 +121,13 @@ class _vcf_metadata_parser(object):
 cdef class _Call(object):
     """ A genotype call, a cell entry in a VCF file"""
     
-    cdef public bytes sample   #NA12878
+    cdef bytes sample   #NA12878
     cdef bytes gt_nums  #'0/1'
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
-    cdef public _Record site   #instance of _Record
-    cdef public dict data
-    cdef public bint called, phased
+    cdef _Record site   #instance of _Record
+    cdef dict data
+    cdef bint called, phased
 
     def __cinit__(self, _Record site, char *sample, dict data):
         #: The ``_Record`` for this ``_Call``
@@ -162,6 +162,23 @@ cdef class _Call(object):
     def __getitem__(self, key):
         """ Lookup value, backwards compatibility """
         return self.data[key]
+
+    property site:
+        """Return the VCF _Record to which this _Call belongs"""
+        def __get__(self): return self.site
+            
+    property sample:
+        """Return the name of the sample"""
+        def __get__(self): return self.sample
+            
+    property called:
+        def __get__(self): return self.called
+
+    property data:
+        def __get__(self): return self.data
+        
+    property phased:
+        def __get__(self): return self.phased
 
     @property
     def gt_bases(self):
@@ -347,17 +364,16 @@ cdef class _Record(object):
     """
     
     # initialize Cython variables for all of the base attrs.
-    cdef public list alleles, samples, ALT, gt_bases, gt_types, gt_phases, \
+    cdef list alleles, samples, ALT, gt_bases, gt_types, gt_phases, \
               gt_depths, gt_ref_depths, gt_alt_depths, gt_quals, gt_copy_numbers
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
-    cdef readonly bytes CHROM, ID, REF, FORMAT
-    cdef readonly object FILTER, QUAL
-    cdef public int POS, start, end, num_hom_ref, num_het, num_hom_alt, \
+    cdef bytes CHROM, ID, REF, FORMAT
+    cdef object FILTER, QUAL
+    cdef int POS, start, end, num_hom_ref, num_het, num_hom_alt, \
              num_unknown, num_called
-    cdef readonly dict INFO
-    cdef readonly dict _sample_indexes
-    cdef readonly bint has_genotypes
+    cdef dict INFO, _sample_indexes
+    cdef bint has_genotypes
 
     def __cinit__(self, char *CHROM, int POS, char *ID, 
                         char *REF, list ALT, object QUAL=None, 
@@ -480,6 +496,133 @@ cdef class _Record(object):
     def genotype(self, name):
         """ Lookup a ``_Call`` for the sample given in ``name`` """
         return self.samples[self._sample_indexes[name]]
+
+    ###############################################################
+    # Core VCF attributes defined in VCF spec.
+    ###############################################################
+    property CHROM:
+        def __get__(self): return self.CHROM
+
+    property POS:
+        def __get__(self): return self.POS
+
+    property ID:
+        def __get__(self): return self.ID
+
+    property REF:
+        def __get__(self): return self.REF
+
+    property ALT:
+        def __get__(self): return self.ALT
+
+    property QUAL:
+        def __get__(self): return self.QUAL
+
+    property INFO:
+        def __get__(self): return self.INFO
+
+    property FILTER:
+        def __get__(self): return self.FILTER
+
+    property FORMAT:
+        def __get__(self): return self.FORMAT
+
+    ###############################################################
+    # Derived attributes provided by CyVCF API.
+    ###############################################################
+    property start:
+        """The 0-based start coordinate for the variant."""
+        def __get__(self): return self.start
+
+    property end:
+        """The 1-based end coordinate for the variant."""
+        def __get__(self): return self.end
+
+    property alleles:
+        """A list of all of the alleles for this variant.
+           [0] = REF, [1:] = ALTS
+        """
+        def __get__(self): return self.alleles
+
+    property samples:
+        """A list of Call instances: one for each sample"""
+        def __get__(self): return self.samples
+
+    property gt_bases:
+        """A list of nucleotide genotypes for each sample.
+           E.g., ['A/G', 'A/A', 'G/G']
+        """
+        def __get__(self): return self.gt_bases
+
+    property gt_types:
+        """A list of numerically-encoded genotypes for each sample.
+           0 = homozygous for the REF allele
+           1 = heterozygous for the reference allele and one of the ALTs
+           2 = homozygous for the ALT allele
+           -1 = unknown / uncalled genotype
+           E.g., ['A/G', 'A/A', 'G/G']
+        """
+        def __get__(self): return self.gt_types
+
+    property gt_phases:
+        """A list of booleans indicating whether or not each genotype is phased.
+           E.g., were the genotypes as follows: ['A/G', 'A|A', 'G/G']
+           this would return [False, True, False]
+        """
+        def __get__(self): return self.gt_phases
+
+    property gt_depths:
+        """A list of integers indicating the depth of sequence coverage for
+           each genotype.
+        """
+        def __get__(self): return self.gt_depths
+
+    property gt_ref_depths:
+        """A list of integers indicating the depth of sequence coverage for
+           the reference allele for each sample.
+        """
+        def __get__(self): return self.gt_ref_depths
+
+    property gt_alt_depths:
+        """A list of integers indicating the depth of sequence coverage for
+           the alternate allele for each sample.
+        """
+        def __get__(self): return self.gt_alt_depths
+
+    property gt_quals:
+        """A list of integers indicating the PHRED scale genotype quality 
+           for each sample.
+        """
+        def __get__(self): return self.gt_quals
+
+    property gt_copy_numbers:
+        """A list of integers indicating the predicted copy number 
+           for each sample.
+        """
+        def __get__(self): return self.gt_copy_numbers
+
+    property num_hom_ref:
+        """The number of homozygotes for the REF allele."""
+        def __get__(self): return self.num_hom_ref
+
+    property num_het:
+        """The number of heterozygotes."""
+        def __get__(self): return self.num_het
+
+    property num_hom_alt:
+        """The number of homozygotes for an ALT allele."""
+        def __get__(self):
+            return self.num_hom_alt
+
+    property num_unknown:
+        """The number of unknown (e.g., ./.) genotypes."""
+        def __get__(self):
+            return self.num_unknown
+
+    property num_called:
+        """The number of called (i.e., NOT ./.) genotypes."""
+        def __get__(self):
+            return self.num_called
 
     @property
     def call_rate(self):
@@ -704,12 +847,10 @@ cdef class Reader(object):
     cdef char _prepend_chr
     cdef object reader
     cdef bint compressed, prepend_chr
-    cdef public dict metadata, infos, filters, formats, 
-    cdef readonly dict _sample_indexes
-    cdef list _header_lines, samp_data
-    cdef public list samples
+    cdef dict metadata, infos, filters, formats, _sample_indexes
+    cdef list _header_lines, samples, samp_data
     cdef object _tabix
-    cdef public object filename
+    cdef object filename
     cdef int num_samples
     cdef _Record curr_record
     
@@ -765,12 +906,36 @@ cdef class Reader(object):
         
     def tell(self):
         return self.reader.tell()
+    
+    property filename:
+        """The name of the VCF file that the Reader is reading."""
+        def __get__(self): return self.filename
+        
+    property samples:
+        """A list of the samples in this VCF file."""
+        def __get__(self): return self.samples
 
+    property formats:
+        """A dict of FORMATS defined in this VCF file."""
+        def __get__(self): return self.formats
+    
+    property infos:
+        """A dict of INFO attrs defined in this VCF file."""
+        def __get__(self): return self.infos
+
+    property filters:
+        """A dict of FILTER attrs defined in this VCF file."""
+        def __get__(self): return self.filters
+
+    property metadata:
+        """?"""
+        def __get__(self): return self.metadata
+            
     property raw_header:
         """Dump the raw, unparsed header lines"""
         def __get__(self): 
             return ''.join(self._header_lines)
-    
+
     def _parse_metainfo(self):
         '''Parse the information stored in the metainfo of the VCF.
 
@@ -1068,25 +1233,23 @@ cdef class Reader(object):
         # collect GENOTYPE information for the current VCF record (self.curr_record)
         if fmt is not None:
             sample_info = self._parse_samples(row[9:], fmt)
-            self._update_genotype_info(self.curr_record, sample_info)
+            self.curr_record.samples = sample_info.samples
+            self.curr_record.gt_bases = sample_info.gt_bases
+            self.curr_record.gt_types = sample_info.gt_types
+            self.curr_record.gt_phases = sample_info.gt_phases
+            self.curr_record.gt_depths = sample_info.gt_depths
+            self.curr_record.gt_ref_depths = sample_info.gt_ref_depths
+            self.curr_record.gt_alt_depths = sample_info.gt_alt_depths
+            self.curr_record.gt_quals = sample_info.gt_quals
+            self.curr_record.gt_copy_numbers = sample_info.gt_copy_numbers
+            self.curr_record.num_hom_ref = sample_info.num_hom_ref
+            self.curr_record.num_het = sample_info.num_het
+            self.curr_record.num_hom_alt = sample_info.num_hom_alt
+            self.curr_record.num_unknown = sample_info.num_unknown
+            self.curr_record.num_called = sample_info.num_called
 
         return self.curr_record
 
-    def _update_genotype_info(self, var, sample_info):
-        var.samples = sample_info.samples
-        var.gt_bases = sample_info.gt_bases
-        var.gt_types = sample_info.gt_types
-        var.gt_phases = sample_info.gt_phases
-        var.gt_depths = sample_info.gt_depths
-        var.gt_ref_depths = sample_info.gt_ref_depths
-        var.gt_alt_depths = sample_info.gt_alt_depths
-        var.gt_quals = sample_info.gt_quals
-        var.gt_copy_numbers = sample_info.gt_copy_numbers
-        var.num_hom_ref = sample_info.num_hom_ref
-        var.num_het = sample_info.num_het
-        var.num_hom_alt = sample_info.num_hom_alt
-        var.num_unknown = sample_info.num_unknown
-        var.num_called = sample_info.num_called
 
     def parse(other, line):
         '''Return the next record in the file.'''
