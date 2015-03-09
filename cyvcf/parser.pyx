@@ -359,6 +359,7 @@ cdef class _Record(object):
     cdef readonly dict INFO
     cdef readonly dict _sample_indexes
     cdef readonly bint has_genotypes
+    cdef public list sample_strings
 
     def __cinit__(self, char *CHROM, int POS, char *ID, 
                         char *REF, list ALT, object QUAL=None, 
@@ -408,6 +409,7 @@ cdef class _Record(object):
             self.has_genotypes = True
         else:
             self.has_genotypes = False
+        self.sample_strings = []
 
     def __richcmp__(self, other, int op):
         """ _Records are equal if they describe the same variant (same position, alleles) """
@@ -1024,13 +1026,31 @@ cdef class Reader(object):
 
     def __next__(self):
         '''Return the next record in the file.'''
+        line = self.reader.next().rstrip()
+        self.parse(line)
+        return self.curr_record
 
-        #self._load_line(self.reader.next())
+
+    def _update_genotype_info(self, var, sample_info):
+        var.samples = sample_info.samples
+        var.gt_bases = sample_info.gt_bases
+        var.gt_types = sample_info.gt_types
+        var.gt_phases = sample_info.gt_phases
+        var.gt_depths = sample_info.gt_depths
+        var.gt_ref_depths = sample_info.gt_ref_depths
+        var.gt_alt_depths = sample_info.gt_alt_depths
+        var.gt_quals = sample_info.gt_quals
+        var.gt_copy_numbers = sample_info.gt_copy_numbers
+        var.num_hom_ref = sample_info.num_hom_ref
+        var.num_het = sample_info.num_het
+        var.num_hom_alt = sample_info.num_hom_alt
+        var.num_unknown = sample_info.num_unknown
+        var.num_called = sample_info.num_called
+
+    def parse(self, line, set_self=True):
+        '''Return the next record in the file.'''
         cdef list row
-        try:
-            row = self.reader.next().rstrip().split('\t')
-        except StopIteration:
-            raise StopIteration
+        row = line.split('\t')
         
         #CHROM
         cdef bytes chrom = row[0]
@@ -1063,91 +1083,16 @@ cdef class Reader(object):
         except IndexError:
             fmt = None
         
-        self.curr_record = \
-             _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
+        curr = _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
 
         # collect GENOTYPE information for the current VCF record (self.curr_record)
+        curr.sample_strings = row[9:]
+        if set_self:
+            self.curr_record = curr
         if fmt is not None:
             sample_info = self._parse_samples(row[9:], fmt)
-            self._update_genotype_info(self.curr_record, sample_info)
-
-        return self.curr_record
-
-    def _update_genotype_info(self, var, sample_info):
-        var.samples = sample_info.samples
-        var.gt_bases = sample_info.gt_bases
-        var.gt_types = sample_info.gt_types
-        var.gt_phases = sample_info.gt_phases
-        var.gt_depths = sample_info.gt_depths
-        var.gt_ref_depths = sample_info.gt_ref_depths
-        var.gt_alt_depths = sample_info.gt_alt_depths
-        var.gt_quals = sample_info.gt_quals
-        var.gt_copy_numbers = sample_info.gt_copy_numbers
-        var.num_hom_ref = sample_info.num_hom_ref
-        var.num_het = sample_info.num_het
-        var.num_hom_alt = sample_info.num_hom_alt
-        var.num_unknown = sample_info.num_unknown
-        var.num_called = sample_info.num_called
-
-    def parse(other, line):
-        '''Return the next record in the file.'''
-
-        #self._load_line(self.reader.next())
-        cdef list row = line.split('\t')
-
-        #CHROM
-        cdef bytes chrom = row[0]
-        if other._prepend_chr:
-            chrom = 'chr' + str(chrom)
-        # POS
-        cdef int pos = int(row[1])
-        # ID
-        cdef bytes id = row[2]
-        #REF
-        cdef bytes ref = row[3]
-        #ALT
-        cdef list alt = other._map(str, row[4].split(','))
-        #QUAL
-        cdef object qual
-        if row[5] == b'.':
-            qual = None
-        else:
-            qual = float(row[5])
-        #FILT
-        cdef object filt = row[6].split(';') if ';' in row[6] else row[6]
-        if filt == b'PASS' or filt == b'.':
-             filt = None
-        #INFO
-        cdef dict info = other._parse_info(row[7])
-        #FORMAT
-        cdef bytes fmt
-        try:
-            fmt = row[8]
-        except IndexError:
-            fmt = None
-
-        curr_record = \
-             _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, other._sample_indexes)
-
-        # collect GENOTYPE information for the current VCF record (self.curr_record)
-        if fmt is not None:
-            sample_info = other._parse_samples(row[9:], fmt)
-            curr_record.samples = sample_info.samples
-            curr_record.gt_bases = sample_info.gt_bases
-            curr_record.gt_types = sample_info.gt_types
-            curr_record.gt_phases = sample_info.gt_phases
-            curr_record.gt_depths = sample_info.gt_depths
-            curr_record.gt_ref_depths = sample_info.gt_ref_depths
-            curr_record.gt_alt_depths = sample_info.gt_alt_depths
-            curr_record.gt_quals = sample_info.gt_quals
-            curr_record.gt_copy_numbers = sample_info.gt_copy_numbers
-            curr_record.num_hom_ref = sample_info.num_hom_ref
-            curr_record.num_het = sample_info.num_het
-            curr_record.num_hom_alt = sample_info.num_hom_alt
-            curr_record.num_unknown = sample_info.num_unknown
-            curr_record.num_called = sample_info.num_called
-
-        return curr_record
+            self._update_genotype_info(curr, sample_info)
+        return curr
 
     def fetch(self, chrom, start, end=None):
         """ fetch records from a Tabix indexed VCF, requires pysam
