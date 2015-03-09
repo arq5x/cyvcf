@@ -351,7 +351,8 @@ cdef class _Record(object):
               gt_depths, gt_ref_depths, gt_alt_depths, gt_quals, gt_copy_numbers
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
-    cdef readonly bytes CHROM, ID, REF, FORMAT
+    cdef readonly bytes CHROM, ID, FORMAT
+    cdef public REF
     cdef readonly object FILTER, QUAL
     cdef public int POS, start, end, num_hom_ref, num_het, num_hom_alt, \
              num_unknown, num_called
