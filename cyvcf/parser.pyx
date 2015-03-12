@@ -48,7 +48,7 @@ class _vcf_metadata_parser(object):
         super(_vcf_metadata_parser, self).__init__()
         self.info_pattern = re.compile(r'''\#\#INFO=<
             ID=(?P<id>[^,]+),
-            Number=(?P<number>-?\d+|\.|[AG]),
+            Number=(?P<number>-?\d+|\.|[ARG]),
             Type=(?P<type>Integer|Float|Flag|Character|String),
             Description="(?P<desc>[^"]*)"
             >''', re.VERBOSE)
@@ -58,7 +58,7 @@ class _vcf_metadata_parser(object):
             >''', re.VERBOSE)
         self.format_pattern = re.compile(r'''\#\#FORMAT=<
             ID=(?P<id>.+),
-            Number=(?P<number>-?\d+|\.|[AG]),
+            Number=(?P<number>-?\d+|\.|[ARG]),
             Type=(?P<type>.+),
             Description="(?P<desc>.*)"
             >''', re.VERBOSE)
@@ -359,7 +359,6 @@ cdef class _Record(object):
     cdef readonly dict INFO
     cdef readonly dict _sample_indexes
     cdef readonly bint has_genotypes
-    cdef public list sample_strings
 
     def __cinit__(self, char *CHROM, int POS, char *ID, 
                         char *REF, list ALT, object QUAL=None, 
@@ -409,7 +408,6 @@ cdef class _Record(object):
             self.has_genotypes = True
         else:
             self.has_genotypes = False
-        self.sample_strings = []
 
     def __richcmp__(self, other, int op):
         """ _Records are equal if they describe the same variant (same position, alleles) """
@@ -714,7 +712,7 @@ cdef class Reader(object):
     cdef object _tabix
     cdef public object filename
     cdef int num_samples
-    cdef _Record curr_record
+    cdef public _Record curr_record
     
     def __init__(self, fsock=None, filename=None, 
                         bint compressed=False, bint prepend_chr=False):
@@ -990,7 +988,7 @@ cdef class Reader(object):
                 samp_fmt, samp_fmt_types, samp_fmt_nums, sample.split(':')):
 
             # short circuit the most common
-            if vals == '.' or vals == './.' or vals == "":
+            if vals in ('.', './.', ""):
                 sampdict[fmt] = None
                 continue
 
@@ -1086,7 +1084,6 @@ cdef class Reader(object):
         curr = _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
 
         # collect GENOTYPE information for the current VCF record (self.curr_record)
-        curr.sample_strings = row[9:]
         if set_self:
             self.curr_record = curr
         if fmt is not None:
