@@ -1,3 +1,5 @@
+# cython: profile=True
+
 import collections
 import re
 import csv
@@ -41,6 +43,9 @@ HET = 1
 HOM_ALT = 3
 UNKNOWN = 2
 
+cdef inline list _map(func, list iterable, char *bad='.'):
+    '''``map``, but make bad values None.'''
+    return [func(x) if x != bad else None for x in iterable]
 
 class _vcf_metadata_parser(object):
     '''Parse the metadat in the header of a VCF file.'''
@@ -163,133 +168,133 @@ cdef class _Call(object):
         """ Lookup value, backwards compatibility """
         return self.data[key]
 
-    @property
-    def gt_bases(self):
-        '''The actual genotype alleles.
-           E.g. if VCF genotype is 0/1, return A/G
-        '''
-        # nothing to do if no genotype call
-        if self.called:
-            # grab the numeric alleles of the gt string; tokenize by phasing
-            phase_char = '/' if not self.phased else '|'
-            alleles = self.gt_nums.split(phase_char)
-            # lookup and return the actual DNA alleles
-            try:
-                return phase_char.join([self.site.alleles[int(a)] \
-                                        if a != '.' else '.' for a in alleles])
-            except KeyError:
-                sys.stderr.write("Allele number not found in list of alleles\n")
-        else:
-            return None
+    property gt_bases:
+        def __get__(self):
+            '''The actual genotype alleles.
+               E.g. if VCF genotype is 0/1, return A/G
+            '''
+            # nothing to do if no genotype call
+            if self.called:
+                # grab the numeric alleles of the gt string; tokenize by phasing
+                phase_char = '/' if not self.phased else '|'
+                alleles = self.gt_nums.split(phase_char)
+                # lookup and return the actual DNA alleles
+                try:
+                    return phase_char.join([self.site.alleles[int(a)] \
+                                            if a != '.' else '.' for a in alleles])
+                except KeyError:
+                    sys.stderr.write("Allele number not found in list of alleles\n")
+            else:
+                return None
 
-    @property
-    def gt_type(self):
-        '''The type of genotype.
-           0 / 00000000 hom ref
-           1 / 00000001 het
-           2 / 00000010 missing
-           3 / 00000011 hom alt
-           hom_ref  = 0
-           het      = 1
-           hom_alt  = 3  (we don;t track _which+ ALT)
-           uncalled = 2
-        '''
-        # extract the numeric alleles of the gt string
-        gt_type = None
-        if self.called:
-            # grab the numeric alleles of the gt string; tokenize by phasing
-            phase_char = '/' if not self.phased else '|'
-            alleles = self.gt_nums.split(phase_char)
-            
-            if len(alleles) == 2:
-                (a1, a2) = alleles
-                if a1 == a2:
-                    if a1 == "0": 
+    property gt_type:
+
+        def __get__(self):
+            '''The type of genotype.
+               0 / 00000000 hom ref
+               1 / 00000001 het
+               2 / 00000010 missing
+               3 / 00000011 hom alt
+               hom_ref  = 0
+               het      = 1
+               hom_alt  = 3  (we don;t track _which+ ALT)
+               uncalled = 2
+            '''
+            # extract the numeric alleles of the gt string
+            gt_type = None
+            if self.called:
+                # grab the numeric alleles of the gt string; tokenize by phasing
+                phase_char = '/' if not self.phased else '|'
+                alleles = self.gt_nums.split(phase_char)
+                
+                if len(alleles) == 2:
+                    if alleles[0] == alleles[1]:
+                        if alleles[0] == "0": 
+                            gt_type = HOM_REF
+                        else: 
+                            gt_type = HOM_ALT
+                    else: 
+                        gt_type = HET
+                elif len(alleles) == 1:
+                    if alleles[0] == "0": 
                         gt_type = HOM_REF
                     else: 
                         gt_type = HOM_ALT
-                else: 
-                    gt_type = HET
-            elif len(alleles) == 1:
-                if alleles[0] == "0": 
-                    gt_type = HOM_REF
-                else: 
-                    gt_type = HOM_ALT
 
-        return gt_type
+            return gt_type
 
-    @property
-    def gt_depth(self):
-        '''The depth of aligned sequences that led to the genotype
-        call for this sample.
-        '''
-        # extract the numeric alleles of the gt string
-        try:
-            depth = self.data['DP']
-            if depth is not None:
-                return depth
-            else:
-                return -1
-        except KeyError:
-            return -1
-            
-    @property
-    def gt_ref_depth(self):
-        '''The depth of aligned sequences that supported the
-        reference allele for this sample.
-        '''
-        # extract the numeric alleles of the gt string
-        if 'AD' in self.data:
-            depths = self.data['AD']
-            if depths is not None:
-                # require bi-allelic
-                if not isinstance(depths, (list, tuple)) or len(depths) != 2:
-                    return -1
-                else:
-                    # ref allele is first
-                    return depths[0]
-            else:
-                return -1
-        elif 'RO' in self.data:
-            if self.data['RO'] is not None:
-                return self.data['RO']
-            else:
-                return -1
-        else:
-            return -1
-
-    @property
-    def gt_alt_depth(self):
-        '''The depth of aligned sequences that supported the
-        alternate allele for this sample.
-        '''
-        # extract the numeric alleles of the gt string
-
-        # GATK style
-        if 'AD' in self.data:
-            depths = self.data['AD']
-            if depths is not None:
-                # require bi-allelic
-                if not isinstance(depths, (list, tuple)) or len(depths) != 2:
-                    return -1
-                else:
-                    # alt allele is second
-                    return depths[1]
-            else:
-                return -1
-        # Freebayes style
-        elif 'AO' in self.data:
-            depth = self.data['AO']
-            if depth is not None:
-                # require bi-allelic
-                if isinstance(depth, list):
-                    return -1
-                else:
+    property gt_depth:
+        def __get__(self):
+            '''The depth of aligned sequences that led to the genotype
+            call for this sample.
+            '''
+            # extract the numeric alleles of the gt string
+            try:
+                depth = self.data['DP']
+                if depth is not None:
                     return depth
+                else:
+                    return -1
+            except KeyError:
+                return -1
+            
+    property gt_ref_depth:
+        def __get__(self):
+            '''The depth of aligned sequences that supported the
+            reference allele for this sample.
+            '''
+            # extract the numeric alleles of the gt string
+            if 'AD' in self.data:
+                depths = self.data['AD']
+                if depths is not None:
+                    # require bi-allelic
+                    if len(depths) == 2 and isinstance(depths, (list, tuple)):
+                        return depths[0]
+                    else:
+                        # ref allele is first
+                        return -1
+                else:
+                    return -1
+            elif 'RO' in self.data:
+                if self.data['RO'] is not None:
+                    return self.data['RO']
+                else:
+                    return -1
             else:
                 return -1
-        else:
-            return -1
+
+    property gt_alt_depth:
+        def __get__(self):
+            '''The depth of aligned sequences that supported the
+            alternate allele for this sample.
+            '''
+            # extract the numeric alleles of the gt string
+
+            # GATK style
+            if 'AD' in self.data:
+                depths = self.data['AD']
+                if depths is not None:
+                    # require bi-allelic
+                    if not isinstance(depths, (list, tuple)) or len(depths) != 2:
+                        return -1
+                    else:
+                        # alt allele is second
+                        return depths[1]
+                else:
+                    return -1
+            # Freebayes style
+            elif 'AO' in self.data:
+                depth = self.data['AO']
+                if depth is not None:
+                    # require bi-allelic
+                    if isinstance(depth, list):
+                        return -1
+                    else:
+                        return depth
+                else:
+                    return -1
+            else:
+                return -1
 
     @property
     def gt_qual(self):
@@ -306,19 +311,18 @@ cdef class _Call(object):
         except KeyError:
             return -1
 
-    @property
-    def gt_copy_number(self):
-        '''The copy number prediction for this sample.
-        '''
-        # extract the numeric alleles of the gt string
-        try:
+    property gt_copy_number:
+        def __get__(self):
+            '''The copy number prediction for this sample.
+            '''
+            # extract the numeric alleles of the gt string
+            if not 'CN' in self.data:
+                return -1
             qual = self.data['CN']
             if qual is not None:
                 return qual
             else:
                 return -1
-        except KeyError:
-            return -1
 
     @property
     def is_variant(self):
@@ -818,10 +822,9 @@ cdef class Reader(object):
              sys.exit("Expected column definition line beginning with #.  Not found - exiting.")
 
 
-    def _map(self, func, iterable, bad='.'):
+    cdef list _map(Reader self, func, iterable, char *bad='.'):
         '''``map``, but make bad values None.'''
-        return [func(x) if x != bad else None
-                for x in iterable]
+        return [func(x) if x != bad else None for x in iterable]
 
 
     def _parse_info(self, info_str):
@@ -832,45 +835,56 @@ cdef class Reader(object):
         if info_str == '.':
             return {}
 
-        entries = info_str.split(';')
-        retdict = {}
+        cdef list entries = info_str.split(';')
+        cdef dict retdict = {}
         
         cdef int i = 0
         cdef int n = len(entries)
         cdef char *entry_type
+        cdef list entry
         # for entry in entries:
         for i in xrange(n):
             entry = entries[i].split('=')
             # entry = entry.split('=')
             ID = entry[0]
+            if ID in self.infos:
+                entry_type = self.infos[ID].type
+            elif ID in RESERVED_INFO:
+                entry_type = RESERVED_INFO[ID]
+            else:
+                if entry[1]:
+                    entry_type = 'String'
+                else:
+                    entry_type = 'Flag'
+
+            """
             try:
                 entry_type = self.infos[ID].type
             except KeyError:
                 try:
                     entry_type = RESERVED_INFO[ID]
                 except KeyError:
-                    if entry[1:]:
+                    if entry[1]:
                         entry_type = 'String'
                     else:
                         entry_type = 'Flag'
-            
+            """ 
             if entry_type == b'Integer':
                 vals = entry[1].split(',')
                 try:
-                    val = self._map(int, vals)
+                    val = _map(int, vals)
                 except ValueError:
-                    val = self._map(float, vals)
+                    val = _map(float, vals)
             elif entry_type == b'Float':
                 vals = entry[1].split(',')
-                val = self._map(float, vals)
+                val = _map(float, vals)
             elif entry_type == b'Flag':
                 val = True
             elif entry_type == b'String':
-                try:
+                if len(entry) > 1:
                     val = entry[1]
-                except IndexError:
+                else:
                     val = True
-
 
             try:
                 if self.infos[ID].num == 1 and entry_type != b'String':
@@ -887,11 +901,11 @@ cdef class Reader(object):
         '''Parse a sample entry according to the format specified in the FORMAT
         column.'''        
         cdef list samp_fmt = samp_fmt_s.split(':')
-        cdef list samp_fmt_types = []
-        cdef list samp_fmt_nums = []
+        cdef int n = len(samp_fmt)
+        cdef list samp_fmt_types = [None] * n
+        cdef list samp_fmt_nums = [None] * n
 
         cdef int i = 0
-        cdef int n = len(samp_fmt)
         cdef char *fmt
         # for fmt in samp_fmt:
         for i in xrange(n):
@@ -905,8 +919,8 @@ cdef class Reader(object):
                     entry_type = RESERVED_FORMAT[fmt]
                 except KeyError:
                     entry_type = 'String'
-            samp_fmt_types.append(entry_type)
-            samp_fmt_nums.append(entry_num)
+            samp_fmt_types[i] = entry_type
+            samp_fmt_nums[i] = entry_num
 
         cdef int num_hom_ref = 0
         cdef int num_het = 0
@@ -978,15 +992,16 @@ cdef class Reader(object):
                            num_hom_alt=num_hom_alt, num_unknown=num_unknown,
                            num_called=num_called)
 
-    def _parse_sample(self, char *sample, list samp_fmt, 
+    cpdef _parse_sample(Reader self, char *sample, list samp_fmt, 
                             list samp_fmt_types, list samp_fmt_nums):
         
         cdef dict sampdict = dict([(x, None) for x in samp_fmt])
+        cdef list lvals
         
         # TO DO: Optimize this into a C-loop
         for fmt, entry_type, entry_num, vals in itertools.izip(
                 samp_fmt, samp_fmt_types, samp_fmt_nums, sample.split(':')):
-
+        
             # short circuit the most common
             if vals in ('.', './.', ""):
                 sampdict[fmt] = None
@@ -1005,17 +1020,17 @@ cdef class Reader(object):
                     sampdict[fmt] = vals
 
                 if entry_num != 1:
-                    sampdict[fmt] = (sampdict[fmt])
+                    sampdict[fmt] = sampdict[fmt]
 
                 continue
 
 
-            vals = vals.split(',')
+            lvals = vals.split(',')
 
             if entry_type == 'Integer':
-                sampdict[fmt] = self._map(int, vals)
-            elif entry_type == 'Float' or entry_type == 'Numeric':
-                sampdict[fmt] = self._map(float, vals)
+                sampdict[fmt] = _map(int, lvals)
+            elif entry_type in ('Float', 'Numeric'):
+                sampdict[fmt] = _map(float, lvals)
             else:
                 sampdict[fmt] = vals
 
