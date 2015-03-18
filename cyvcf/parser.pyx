@@ -218,6 +218,7 @@ cdef class _Call(object):
             phase_char = '/' if not self.phased else '|'
             alleles = self.gt_nums.split(phase_char)
             
+
             if len(alleles) == 2:
                 (a1, a2) = alleles
                 if a1 == a2:
@@ -1152,7 +1153,7 @@ cdef class Reader(object):
                 samp_fmt, samp_fmt_types, samp_fmt_nums, sample.split(':')):
 
             # short circuit the most common
-            if vals == '.' or vals == './.':
+            if vals == '.' or vals == './.' or vals == '.|.':
                 sampdict[fmt] = None
                 continue
 
