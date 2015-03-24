@@ -31,6 +31,7 @@ _SampleInfo = collections.namedtuple('SampleInfo', 'samples, gt_bases, \
                                                     gt_depths, gt_ref_depths, \
                                                     gt_alt_depths, gt_quals, \
                                                     gt_copy_numbers, \
+                                                    gt_phred_likelihoods, \
                                                     num_hom_ref, num_het, \
                                                     num_hom_alt, num_unknown, \
                                                     num_called')
@@ -261,6 +262,17 @@ cdef class _Call(object):
             else:
                 return -1
 
+    property gt_phred_likelihoods:
+        def __get__(self):
+            if 'PL' in self.data:
+                return self.data['PL']
+                # phred-scaled.
+            elif 'GL' in self.data and self.data['GL'] is not None:
+                return [int(round(-10 * g)) if g is not None else None for g in self.data['GL']]
+            else:
+                return []
+
+
     property gt_alt_depth:
         def __get__(self):
             '''The depth of aligned sequences that supported the
@@ -350,7 +362,8 @@ cdef class _Record(object):
 
     # initialize Cython variables for all of the base attrs.
     cdef public list alleles, samples, ALT, gt_bases, gt_types, gt_phases, \
-              gt_depths, gt_ref_depths, gt_alt_depths, gt_quals, gt_copy_numbers
+              gt_depths, gt_ref_depths, gt_alt_depths, gt_quals, gt_copy_numbers,\
+              gt_phred_likelihoods
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
     cdef readonly bytes CHROM, ID, FORMAT
@@ -369,7 +382,9 @@ cdef class _Record(object):
                         list gt_bases=None, list gt_types=None,
                         list gt_phases=None, list gt_depths=None,
                         list gt_ref_depths=None, list gt_alt_depths=None,
-                        list gt_quals=None, list gt_copy_numbers=None, int num_hom_ref=0,
+                        list gt_quals=None, list gt_copy_numbers=None,
+                        list gt_phred_likelihoods=None,
+                        int num_hom_ref=0,
                         int num_het=0, int num_hom_alt=0,
                         int num_unknown=0, int num_called=0):
         # CORE VCF fields
@@ -401,6 +416,7 @@ cdef class _Record(object):
         self.gt_alt_depths = gt_alt_depths
         self.gt_quals = gt_quals
         self.gt_copy_numbers = gt_copy_numbers
+        self.gt_phred_likelihoods = gt_phred_likelihoods
         self.num_hom_ref = num_hom_ref
         self.num_het = num_het
         self.num_hom_alt = num_hom_alt
@@ -936,6 +952,7 @@ cdef class Reader(object):
         cdef list gt_alt_depths  = []# 7, 5, 0, etc.
         cdef list gt_quals  = []# 10, 30, 20, etc.
         cdef list gt_copy_numbers  = []# 2, 1, 4, etc.
+        cdef list gt_phred_likelihoods = []
         i = 0
         for i in xrange(self.num_samples):
             name = self.samples[i]
@@ -954,6 +971,7 @@ cdef class Reader(object):
             alt_depth = call.gt_alt_depth
             qual = call.gt_qual
             copy_number = call.gt_copy_number
+            phred_likelihoods = call.gt_phred_likelihoods
 
             # add to the "all-samples" lists of GT info
             if alleles is not None:
@@ -969,6 +987,7 @@ cdef class Reader(object):
             gt_alt_depths.append(alt_depth)
             gt_quals.append(qual)
             gt_copy_numbers.append(copy_number)
+            gt_phred_likelihoods.append(phred_likelihoods)
 
             # 0 / 00000000 hom ref
             # 1 / 00000001 het
@@ -988,6 +1007,7 @@ cdef class Reader(object):
                            gt_depths=gt_depths, gt_ref_depths=gt_ref_depths,
                            gt_alt_depths=gt_alt_depths, gt_quals=gt_quals,
                            gt_copy_numbers=gt_copy_numbers,
+                           gt_phred_likelihoods=gt_phred_likelihoods,
                            num_hom_ref=num_hom_ref, num_het=num_het,
                            num_hom_alt=num_hom_alt, num_unknown=num_unknown,
                            num_called=num_called)
@@ -1054,6 +1074,7 @@ cdef class Reader(object):
         var.gt_alt_depths = sample_info.gt_alt_depths
         var.gt_quals = sample_info.gt_quals
         var.gt_copy_numbers = sample_info.gt_copy_numbers
+        var.gt_phred_likelihoods = sample_info.gt_phred_likelihoods
         var.num_hom_ref = sample_info.num_hom_ref
         var.num_het = sample_info.num_het
         var.num_hom_alt = sample_info.num_hom_alt
