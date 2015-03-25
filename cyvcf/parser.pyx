@@ -123,7 +123,7 @@ class _vcf_metadata_parser(object):
 
 cdef class _Call(object):
     """ A genotype call, a cell entry in a VCF file"""
-    
+
     cdef public bytes sample   #NA12878
     cdef bytes gt_nums  #'0/1'
     # use bytes instead of char * because of C -> Python string complications
@@ -151,7 +151,7 @@ cdef class _Call(object):
 
     def __repr__(self):
         return "Call(sample=%s, GT=%s, GQ=%s)" % (self.sample, self.gt_nums, self.data.get('GQ', ''))
-        
+
     def __richcmp__(self, other, int op):
         """ Two _Calls are equal if their _Records are equal
             and the samples and ``gt_type``s are the same
@@ -204,19 +204,19 @@ cdef class _Call(object):
                 # grab the numeric alleles of the gt string; tokenize by phasing
                 phase_char = '/' if not self.phased else '|'
                 alleles = self.gt_nums.split(phase_char)
-                
+
                 if len(alleles) == 2:
                     if alleles[0] == alleles[1]:
-                        if alleles[0] == "0": 
+                        if alleles[0] == "0":
                             gt_type = HOM_REF
-                        else: 
+                        else:
                             gt_type = HOM_ALT
-                    else: 
+                    else:
                         gt_type = HET
                 elif len(alleles) == 1:
-                    if alleles[0] == "0": 
+                    if alleles[0] == "0":
                         gt_type = HOM_REF
-                    else: 
+                    else:
                         gt_type = HOM_ALT
 
             return gt_type
@@ -235,7 +235,7 @@ cdef class _Call(object):
                     return -1
             except KeyError:
                 return -1
-            
+
     property gt_ref_depth:
         def __get__(self):
             '''The depth of aligned sequences that supported the
@@ -246,7 +246,7 @@ cdef class _Call(object):
                 depths = self.data['AD']
                 if depths is not None:
                     # require bi-allelic
-                    if len(depths) == 2 and isinstance(depths, (list, tuple)):
+                    if isinstance(depths, (list, tuple)) and len(depths) == 2:
                         return depths[0]
                     else:
                         # ref allele is first
@@ -340,14 +340,14 @@ cdef class _Call(object):
 cdef class _Record(object):
     """ A set of calls at a site.  Equivalent to a line in a VCF file.
 
-        The standard VCF fields: 
-        CHROM, POS, ID, 
-        REF, ALT, QUAL, 
+        The standard VCF fields:
+        CHROM, POS, ID,
+        REF, ALT, QUAL,
         FILTER, INFO, & FORMAT are available as properties.
 
         The list of genotype calls is in the ``samples`` property.
     """
-    
+
     # initialize Cython variables for all of the base attrs.
     cdef public list alleles, samples, ALT, gt_bases, gt_types, gt_phases, \
               gt_depths, gt_ref_depths, gt_alt_depths, gt_quals, gt_copy_numbers
@@ -362,11 +362,11 @@ cdef class _Record(object):
     cdef readonly dict _sample_indexes
     cdef readonly bint has_genotypes
 
-    def __cinit__(self, char *CHROM, int POS, char *ID, 
-                        char *REF, list ALT, object QUAL=None, 
-                        object FILTER=None, dict INFO=None, object FORMAT=None, 
+    def __cinit__(self, char *CHROM, int POS, char *ID,
+                        char *REF, list ALT, object QUAL=None,
+                        object FILTER=None, dict INFO=None, object FORMAT=None,
                         dict sample_indexes=None, list samples=None,
-                        list gt_bases=None, list gt_types=None, 
+                        list gt_bases=None, list gt_types=None,
                         list gt_phases=None, list gt_depths=None,
                         list gt_ref_depths=None, list gt_alt_depths=None,
                         list gt_quals=None, list gt_copy_numbers=None, int num_hom_ref=0,
@@ -413,7 +413,7 @@ cdef class _Record(object):
 
     def __richcmp__(self, other, int op):
         """ _Records are equal if they describe the same variant (same position, alleles) """
-        
+
         # < 0 | <= 1 | == 2 | != 3 |  > 4 | >= 5
         if op == 2: # 2
             return (self.CHROM == other.CHROM and
@@ -426,7 +426,7 @@ cdef class _Record(object):
 
     def _format_alt(self):
         return ','.join([x or '.' for x in self.ALT])
-    
+
     def _format_qual(self):
         return str(self.QUAL) if self.QUAL is not None else None
 
@@ -449,7 +449,7 @@ cdef class _Record(object):
         '''``map``, but make None values none.'''
         return [func(x) if x is not None else none
                 for x in iterable]
-                    
+
     def __repr__(self):
         if self.has_genotypes == True:
             core = "\t".join([self.CHROM, str(self.POS), str(self.ID), str(self.REF), self._format_alt(),
@@ -459,7 +459,7 @@ cdef class _Record(object):
         else:
             return "\t".join([self.CHROM, str(self.POS), str(self.ID), str(self.REF), self._format_alt(),
                           self._format_qual() or '.', self.FILTER or '.', self._format_info()])
-            
+
 
     def __cmp__(self, other):
         return cmp( (self.CHROM, self.POS), (other.CHROM, other.POS))
@@ -556,7 +556,7 @@ cdef class _Record(object):
     def is_indel(self):
         """ Return whether or not the variant is an INDEL """
         is_sv = self.is_sv
-        
+
         if len(self.REF) > 1 and not is_sv: return True
         for alt in self.ALT:
             if alt is None:
@@ -570,7 +570,7 @@ cdef class _Record(object):
                     # 1	2827693	.	CCCCTCGCA	C	.	PASS	SVTYPE=DEL;
                     return False
         return False
-        
+
     @property
     def is_sv(self):
         """ Return whether or not the variant is a structural variant """
@@ -637,17 +637,17 @@ cdef class _Record(object):
                <DEL>       -> DEL
                <INS:ME:L1> -> INS:ME:L1
                <DUP>       -> DUP
-        
+
         The logic is meant to follow the rules outlined in the following
         paragraph at:
-        
+
         http://www.1000genomes.org/wiki/Analysis/Variant%20Call%20Format/vcf-variant-call-format-version-41
-        
-        "For precisely known variants, the REF and ALT fields should contain 
-        the full sequences for the alleles, following the usual VCF conventions. 
-        For imprecise variants, the REF field may contain a single base and the 
-        ALT fields should contain symbolic alleles (e.g. <ID>), described in more 
-        detail below. Imprecise variants should also be marked by the presence 
+
+        "For precisely known variants, the REF and ALT fields should contain
+        the full sequences for the alleles, following the usual VCF conventions.
+        For imprecise variants, the REF field may contain a single base and the
+        ALT fields should contain symbolic alleles (e.g. <ID>), described in more
+        detail below. Imprecise variants should also be marked by the presence
         of an IMPRECISE flag in the INFO field."
         """
         if self.is_snp:
@@ -671,7 +671,7 @@ cdef class _Record(object):
                 return self.INFO['SVTYPE']
             else:
                 # first remove both "<" and ">" from ALT
-                return self.ALT[0].strip('<>') 
+                return self.ALT[0].strip('<>')
         else:
             return "unknown"
 
@@ -681,10 +681,10 @@ cdef class _Record(object):
         if self.is_sv:
             return self.INFO['END']
         return None
-        
+
     @property
     def is_sv_precise(self):
-        """ Return whether the SV cordinates are mapped 
+        """ Return whether the SV cordinates are mapped
             to 1 b.p. resolution.
         """
         if self.INFO.get('IMPRECISE') is None and not self.is_sv:
@@ -701,13 +701,13 @@ cdef class _Record(object):
 
 
 cdef class Reader(object):
-    
+
     """ Reader for a VCF v 4.1 file, an iterator returning ``_Record objects`` """
     cdef bytes _col_defn_line
     cdef char _prepend_chr
     cdef object reader
     cdef bint compressed, prepend_chr
-    cdef public dict metadata, infos, filters, formats, 
+    cdef public dict metadata, infos, filters, formats,
     cdef readonly dict _sample_indexes
     cdef list _header_lines, samp_data
     cdef public list samples
@@ -715,8 +715,8 @@ cdef class Reader(object):
     cdef public object filename
     cdef int num_samples
     cdef public _Record curr_record
-    
-    def __init__(self, fsock=None, filename=None, 
+
+    def __init__(self, fsock=None, filename=None,
                         bint compressed=False, bint prepend_chr=False):
         """ Create a new Reader for a VCF file.
 
@@ -762,18 +762,18 @@ cdef class Reader(object):
 
     def __iter__(self):
         return self
-        
+
     def seek(self, offset):
         self.reader.seek(offset)
-        
+
     def tell(self):
         return self.reader.tell()
 
     property raw_header:
         """Dump the raw, unparsed header lines"""
-        def __get__(self): 
+        def __get__(self):
             return ''.join(self._header_lines)
-    
+
     def _parse_metainfo(self):
         '''Parse the information stored in the metainfo of the VCF.
 
@@ -785,12 +785,12 @@ cdef class Reader(object):
         #     setattr(self, attr, {})
 
         parser = _vcf_metadata_parser()
-        
+
         line = self.reader.next()
         while line.startswith('##'):
             self._header_lines.append(line)
             line = line.rstrip('\n')
-            
+
             if line.startswith('##INFO'):
                 key, val = parser.read_info(line)
                 self.infos[key] = val
@@ -835,7 +835,7 @@ cdef class Reader(object):
 
         cdef list entries = info_str.split(';')
         cdef dict retdict = {}
-        
+
         cdef int i = 0
         cdef int n = len(entries)
         cdef char *entry_type
@@ -866,7 +866,7 @@ cdef class Reader(object):
                         entry_type = 'String'
                     else:
                         entry_type = 'Flag'
-            """ 
+            """
             if entry_type == b'Integer':
                 vals = entry[1].split(',')
                 try:
@@ -897,7 +897,7 @@ cdef class Reader(object):
 
     def _parse_samples(self, list samples, char *samp_fmt_s):
         '''Parse a sample entry according to the format specified in the FORMAT
-        column.'''        
+        column.'''
         cdef list samp_fmt = samp_fmt_s.split(':')
         cdef int n = len(samp_fmt)
         cdef list samp_fmt_types = [None] * n
@@ -952,7 +952,7 @@ cdef class Reader(object):
             alt_depth = call.gt_alt_depth
             qual = call.gt_qual
             copy_number = call.gt_copy_number
-            
+
             # add to the "all-samples" lists of GT info
             if alleles is not None:
                 gt_alleles.append(alleles)
@@ -967,12 +967,12 @@ cdef class Reader(object):
             gt_alt_depths.append(alt_depth)
             gt_quals.append(qual)
             gt_copy_numbers.append(copy_number)
-            
+
             # 0 / 00000000 hom ref
             # 1 / 00000001 het
             # 2 / 00000010 missing
             # 3 / 00000011 hom alt
-            
+
             # tally the appropriate GT count
             if type == HOM_REF: num_hom_ref += 1
             elif type == HET: num_het += 1
@@ -990,16 +990,16 @@ cdef class Reader(object):
                            num_hom_alt=num_hom_alt, num_unknown=num_unknown,
                            num_called=num_called)
 
-    cpdef _parse_sample(Reader self, char *sample, list samp_fmt, 
+    cpdef _parse_sample(Reader self, char *sample, list samp_fmt,
                             list samp_fmt_types, list samp_fmt_nums):
-        
+
         cdef dict sampdict = dict([(x, None) for x in samp_fmt])
         cdef list lvals
-        
+
         # TO DO: Optimize this into a C-loop
         for fmt, entry_type, entry_num, vals in itertools.izip(
                 samp_fmt, samp_fmt_types, samp_fmt_nums, sample.split(':')):
-        
+
             # short circuit the most common
             if vals in ('.', './.', '.|.', ""):
                 sampdict[fmt] = None
@@ -1062,7 +1062,7 @@ cdef class Reader(object):
         '''Return the next record in the file.'''
         cdef list row
         row = line.split('\t')
-        
+
         #CHROM
         cdef bytes chrom = row[0]
         if self._prepend_chr:
@@ -1093,7 +1093,7 @@ cdef class Reader(object):
             fmt = row[8]
         except IndexError:
             fmt = None
-        
+
         curr = _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
 
         # collect GENOTYPE information for the current VCF record (self.curr_record)

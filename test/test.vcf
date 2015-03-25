@@ -1,0 +1,53 @@
+##fileformat=VCFv4.1
+##FILTER=<ID=PASS,Description="All filters passed">
+##source=VarScan2
+##INFO=<ID=ADP,Number=1,Type=Integer,Description="Average per-sample depth of bases with Phred score >= 15">
+##INFO=<ID=WT,Number=1,Type=Integer,Description="Number of samples called reference (wild-type)">
+##INFO=<ID=HET,Number=1,Type=Integer,Description="Number of samples called heterozygous-variant">
+##INFO=<ID=HOM,Number=1,Type=Integer,Description="Number of samples called homozygous-variant">
+##INFO=<ID=NC,Number=1,Type=Integer,Description="Number of samples not called">
+##FILTER=<ID=str10,Description="Less than 10% or more than 90% of variant supporting reads on one strand">
+##FILTER=<ID=indelError,Description="Likely artifact due to indel reads at this position">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##FORMAT=<ID=SDP,Number=1,Type=Integer,Description="Raw Read Depth as reported by SAMtools">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Quality Read Depth of bases with Phred score >= 15">
+##FORMAT=<ID=RD,Number=1,Type=Integer,Description="Depth of reference-supporting bases (reads1)">
+##FORMAT=<ID=AD,Number=1,Type=Integer,Description="Depth of variant-supporting bases (reads2)">
+##FORMAT=<ID=FREQ,Number=1,Type=String,Description="Variant allele frequency">
+##FORMAT=<ID=PVAL,Number=1,Type=String,Description="P-value from Fisher's Exact Test">
+##FORMAT=<ID=RBQ,Number=1,Type=Integer,Description="Average quality of reference-supporting bases (qual1)">
+##FORMAT=<ID=ABQ,Number=1,Type=Integer,Description="Average quality of variant-supporting bases (qual2)">
+##FORMAT=<ID=RDF,Number=1,Type=Integer,Description="Depth of reference-supporting bases on forward strand (reads1plus)">
+##FORMAT=<ID=RDR,Number=1,Type=Integer,Description="Depth of reference-supporting bases on reverse strand (reads1minus)">
+##FORMAT=<ID=ADF,Number=1,Type=Integer,Description="Depth of variant-supporting bases on forward strand (reads2plus)">
+##FORMAT=<ID=ADR,Number=1,Type=Integer,Description="Depth of variant-supporting bases on reverse strand (reads2minus)">
+##contig=<ID=chr1>
+##contig=<ID=chr2>
+##contig=<ID=chr3>
+##contig=<ID=chr4>
+##contig=<ID=chr5>
+##contig=<ID=chr6>
+##contig=<ID=chr7>
+##contig=<ID=chr8>
+##contig=<ID=chr9>
+##contig=<ID=chr10>
+##contig=<ID=chr11>
+##contig=<ID=chr12>
+##contig=<ID=chr13>
+##contig=<ID=chr14>
+##contig=<ID=chr15>
+##contig=<ID=chr16>
+##contig=<ID=chr17>
+##contig=<ID=chr18>
+##contig=<ID=chr19>
+##contig=<ID=chr20>
+##contig=<ID=chr21>
+##contig=<ID=chr22>
+##contig=<ID=chrX>
+##contig=<ID=chrY>
+##INFO=<ID=OLD_MULTIALLELIC,Number=1,Type=String,Description="Original chr:pos:ref:alt encoding">
+##INFO=<ID=OLD_VARIANT,Number=1,Type=String,Description="Original chr:pos:ref:alt encoding">
+##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence type as predicted by VEP. Format: Consequence|Codons|Amino_acids|Gene|SYMBOL|Feature|EXON|PolyPhen|SIFT|Protein_position|BIOTYPE||HGVSp|HGVSc|CANONICAL">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample_01-14G01394	Sample_02-14G04079	Sample_03-14G19847	Sample_04-15G00251	Sample_05-14G24871	Sample_06-04G03785	Sample_07-05G00575	Sample_08-04G05168	Sample_09-12G05170	Sample_10-14G19446-1	Sample_11-15G00148	Sample_12-11G13366
+chr1	949608	.	G	A	.	PASS	ADP=231;WT=5;HET=6;HOM=1;NC=0;CSQ=missense_variant|aGc/aAc|S/N|ENSG00000187608|ISG15|ENST00000379389|2/2|benign(0.009)|tolerated(0.25)|83/165|protein_coding||ENSP00000368699.4:p.Ser83Asn|ENST00000379389.4:c.248G>A|YES,upstream_gene_variant|||ENSG00000224969|RP11-54O7.11|ENST00000458555|||||antisense||||YES	GT:GQ:SDP:DP:RD:AD:FREQ:PVAL:RBQ:ABQ:RDF:RDR:ADF:ADR	0/0:395:240:240:235:3:1.25%:1.2421E-1:39:15:125:110:3:0	0/1:252:178:178:106:71:39.89%:6.0237E-26:39:38:56:50:32:39	0/1:255:193:193:88:105:54.4%:5.7979E-41:40:38:51:37:53:52	0/1:255:219:219:107:112:51.14%:7.0426E-43:41:39:62:45:60:52	0/1:255:239:239:128:110:46.03%:4.7111E-41:38:37:69:59:55:55	0/0:484:277:277:275:2:0.72%:2.4955E-1:38:15:135:140:2:0	0/1:255:227:227:126:101:44.49%:2.0201E-37:39:38:69:57:50:51	1/1:255:262:262:2:259:98.85%:7.1891E-152:40:38:2:0:138:121	0/1:255:246:246:137:108:43.9%:6.9049E-40:39:39:69:68:48:60	0/0:456:243:243:243:0:0%:1E0:38:0:127:116:0:0	0/0:348:195:195:194:1:0.51%:5E-1:37:15:93:101:1:0	0/0:458:264:264:261:2:0.76%:2.4952E-1:40:38:139:122:0:2

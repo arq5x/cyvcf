@@ -61,7 +61,7 @@ class TestVcfSpecs(unittest.TestCase):
 
     def test_vcf_4_1_sv(self):
         return
-       
+
         reader = cyvcf.Reader(fh('example-4.1-sv.vcf'))
 
         assert 'SVLEN' in reader.infos
@@ -76,7 +76,7 @@ class TestVcfSpecs(unittest.TestCase):
         # asserting False while I work out what to check
         assert False
 
-        
+
 class TestGatkOutput(unittest.TestCase):
 
     filename = 'gatk.vcf'
@@ -237,7 +237,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(0.0/6.0, pi)
             elif var.POS == 1234567:
                 self.assertEqual(None, pi)
-                
+
     def test_is_snp(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
         for var in reader:
@@ -377,7 +377,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(True, is_sv)
             elif var.POS == 18665128:
                 self.assertEqual(True, is_sv)
-                
+
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
         for var in reader:
             is_sv = var.is_sv
@@ -391,7 +391,7 @@ class TestRecord(unittest.TestCase):
                 self.assertEqual(False, is_sv)
             elif var.POS == 1234567:
                 self.assertEqual(False, is_sv)
-                
+
     def test_is_sv_precise(self):
         reader = cyvcf.Reader(fh('example-4.1-sv.vcf'))
         for var in reader:
@@ -504,7 +504,7 @@ class TestCall(unittest.TestCase):
                 self.assertEqual([0,0,0], gt_types)
             elif var.POS == 1234567:
                 self.assertEqual([None,1,3], gt_types)
-                
+
     def test_gt_depths(self):
         reader = cyvcf.Reader(fh('example-4.0.vcf'))
         for var in reader:
@@ -521,7 +521,7 @@ class TestCall(unittest.TestCase):
                 self.assertEqual([7,4,2], gt_depths)
             elif var.POS == 1234567:
                 self.assertEqual([4,2,3], gt_depths)
-                
+
     def test_gt_ref_depths(self):
 
         reader = cyvcf.Reader(fh('gatk.vcf'))
@@ -533,7 +533,7 @@ class TestCall(unittest.TestCase):
                 self.assertEqual([13,118,241,161,110,106,116], gt_ref_depths)
             elif var.POS == 42527891:
                 self.assertEqual([-1,238,246,239,232,233,238], gt_ref_depths)
-                
+
     def test_gt_alt_depths(self):
 
         reader = cyvcf.Reader(fh('gatk.vcf'))
@@ -601,7 +601,7 @@ class TestOpenMethods(unittest.TestCase):
 
     def testOpenFilehandle(self):
         r = cyvcf.Reader(fh('example-4.0.vcf'))
-        self.assertEqual(self.samples, r.samples)        
+        self.assertEqual(self.samples, r.samples)
         self.assertEqual('example-4.0.vcf', os.path.split(r.filename)[1])
 
     def testOpenFilename(self):
@@ -663,7 +663,7 @@ class TestFilter(unittest.TestCase):
         assert 'mgq50' in reader.filters
         assert 'sq30' in reader.filters
 
-        
+
 class TestRegression(unittest.TestCase):
 
     def test_issue_16(self):
@@ -719,9 +719,17 @@ class TestUtils(unittest.TestCase):
                 assert recs[1] is not None
 
 
+class TestAD(unittest.TestCase):
+    def setUp(self):
+        self.reader = cyvcf.Reader(fh('test.vcf'))
+
+    def testRefDepth(self):
+        v = self.reader.next()
+        self.assertEqual(v.samples[0].gt_ref_depth, -1)
 
 
 
+suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestAD))
 suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestGatkOutput))
 suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestFreebayesOutput))
 suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestSamtoolsOutput))
