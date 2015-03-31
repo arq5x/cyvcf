@@ -883,6 +883,8 @@ cdef class Reader(object):
                     val = entry[1]
                 else:
                     val = True
+            elif entry_type == b'Character':
+                val = entry[1]
 
             try:
                 if self.infos[ID].num == 1 and entry_type != b'String':
