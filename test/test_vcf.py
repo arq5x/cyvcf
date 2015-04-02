@@ -117,7 +117,7 @@ class TestGatkOutput(unittest.TestCase):
 
             # check ordered access
             self.assertEqual([x.sample for x in site.samples], self.samples)
-
+        self.assertEqual(len(site.gt_phred_likelihoods), len(self.samples))
         self.assertEqual(n,  self.n_calls)
 
 
