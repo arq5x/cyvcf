@@ -371,7 +371,7 @@ cdef class _Record(object):
     cdef readonly object FILTER, QUAL
     cdef public int POS, start, end, num_hom_ref, num_het, num_hom_alt, \
              num_unknown, num_called
-    cdef readonly dict INFO
+    cdef public dict INFO
     cdef readonly dict _sample_indexes
     cdef readonly bint has_genotypes
 
@@ -1164,6 +1164,7 @@ class Writer(object):
     fixed_fields = "#CHROM POS ID REF ALT QUAL FILTER INFO FORMAT".split()
 
     def __init__(self, stream, template):
+        self.stream = stream
         self.writer = csv.writer(stream, delimiter="\t")
         self.template = template
 
