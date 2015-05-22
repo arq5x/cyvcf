@@ -727,6 +727,13 @@ class TestAD(unittest.TestCase):
         v = self.reader.next()
         self.assertEqual(v.samples[0].gt_ref_depth, -1)
 
+class TestGLInt(unittest.TestCase):
+    def setUp(self):
+        self.reader = cyvcf.Reader(fh('test-gl.vcf'))
+    def testGLInt(self):
+        v = next(self.reader)
+        self.assertEqual(v.samples[0].gt_phred_likelihoods, None)
+
 
 
 suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestAD))
@@ -741,3 +748,4 @@ suite.addTests(unittest.TestLoader().loadTestsFromTestCase(Test1kg))
 suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestRecord))
 suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestCall))
 suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestRegression))
+suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestGLInt))

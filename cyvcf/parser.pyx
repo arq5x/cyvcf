@@ -268,6 +268,9 @@ cdef class _Call(object):
                 return self.data['PL']
                 # phred-scaled.
             elif 'GL' in self.data and self.data['GL'] is not None:
+                # it's not usable anyway, so return None
+                if not isinstance(self.data["GL"], list):
+                    return None
                 return [int(round(-10 * g)) if g is not None else None for g in self.data['GL']]
             else:
                 return []
