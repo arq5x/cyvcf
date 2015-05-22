@@ -248,7 +248,10 @@ cdef class _Call(object):
                 if depths is not None:
                     # require bi-allelic
                     if isinstance(depths, (list, tuple)) and len(depths) == 2:
-                        return depths[0]
+                        d = depths[0]
+                        if d is None:
+                            return -1
+                        return d
                     else:
                         # ref allele is first
                         return -1
@@ -292,7 +295,10 @@ cdef class _Call(object):
                         return -1
                     else:
                         # alt allele is second
-                        return depths[1]
+                        d = depths[1]
+                        if d is None:
+                            return -1
+                        return d
                 else:
                     return -1
             # Freebayes style
