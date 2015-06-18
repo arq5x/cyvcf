@@ -869,10 +869,10 @@ cdef class Reader(object):
             elif ID in RESERVED_INFO:
                 entry_type = RESERVED_INFO[ID]
             else:
-                if entry[1]:
-                    entry_type = 'String'
-                else:
+                if len(entry) == 1:
                     entry_type = 'Flag'
+                else:
+                    entry_type = 'String'
 
             """
             try:
