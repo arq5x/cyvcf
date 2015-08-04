@@ -5,6 +5,8 @@ import gzip
 import sys
 import itertools
 
+from . import utils
+
 try:
     import pysam
 except ImportError:
@@ -23,28 +25,57 @@ RESERVED_FORMAT = {
     'GQ': 'Float', 'HQ': 'Float'
 }
 
-_Info = collections.namedtuple('Info', ['id', 'num', 'type', 'desc'])
-_Filter = collections.namedtuple('Filter', ['id', 'desc'])
-_Format = collections.namedtuple('Format', ['id', 'num', 'type', 'desc'])
-_SampleInfo = collections.namedtuple('SampleInfo', 'samples, gt_bases, \
-                                                    gt_types, gt_phases, \
-                                                    gt_depths, gt_ref_depths, \
-                                                    gt_alt_depths, gt_quals, \
-                                                    gt_copy_numbers, \
-                                                    gt_phred_likelihoods, \
-                                                    num_hom_ref, num_het, \
-                                                    num_hom_alt, num_unknown, \
-                                                    num_called')
+#Info = collections.namedtuple('Info', ['id', 'num', 'type', 'desc'])
+#Filter = collections.namedtuple('Filter', ['id', 'desc'])
+#Format = collections.namedtuple('Format', ['id', 'num', 'type', 'desc'])
 
 HOM_REF = 0
 HET = 1
 HOM_ALT = 3
 UNKNOWN = 2
 
+cdef class Filter(object):
+    cdef public str id
+    cdef public str desc
 
-cdef inline _Call _parse_sample(char *sample, list samp_fmt,
+    def __init__(self, id, desc):
+        self.id = id
+        self.desc = desc
+
+    def __reduce__(self):
+        return utils.build_filter, (self.id, self.desc), {}
+
+    def __setstate__(self, *args, **kwargs):
+        pass
+
+cdef class Format(object):
+    cdef public str id
+    cdef public object num
+    cdef public str type
+    cdef public str desc
+
+    def __init__(self, id, num, type, desc):
+        self.id = id
+        self.num = num
+        self.type = type
+        self.desc = desc
+
+    def __reduce__(self):
+        return utils.build_format, (self.id, self.num, self.type, self.desc), {}
+
+    def __setstate__(self, *args, **kwargs):
+        pass
+
+cdef class Info(Format):
+    def __reduce__(self):
+        return utils.build_info, (self.id, self.num, self.type, self.desc), {}
+
+    def __setstate__(self, *args, **kwargs):
+        pass
+
+def _parse_sample(char *sample, list samp_fmt,
                                list samp_fmt_types, list samp_fmt_nums,
-                               char *name, _Record rec):
+                               char *name, Record rec):
 
     cdef dict sampdict = {x: None for x in samp_fmt}
     cdef list lvals
@@ -134,7 +165,7 @@ class _vcf_metadata_parser(object):
         except ValueError:
             num = None
 
-        info = _Info(match.group('id'), num,
+        info = Info(match.group('id'), num,
                      match.group('type'), match.group('desc'))
 
         return (match.group('id'), info)
@@ -146,7 +177,7 @@ class _vcf_metadata_parser(object):
             raise SyntaxError(
                 "One of the FILTER lines is malformed: %s" % filter_string)
 
-        filt = _Filter(match.group('id'), match.group('desc'))
+        filt = Filter(match.group('id'), match.group('desc'))
 
         return (match.group('id'), filt)
 
@@ -164,7 +195,7 @@ class _vcf_metadata_parser(object):
         except ValueError:
             num = None
 
-        form = _Format(match.group('id'), num,
+        form = Format(match.group('id'), num,
                        match.group('type'), match.group('desc'))
 
         return (match.group('id'), form)
@@ -181,13 +212,13 @@ cdef class _Call(object):
     cdef bytes gt_nums  #'0/1'
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
-    cdef public _Record site   #instance of _Record
+    cdef public Record site   #instance of Record
     cdef public dict data
     cdef public bint called, phased
     cdef list alleles
 
-    def __cinit__(self, _Record site, char *sample, dict data):
-        #: The ``_Record`` for this ``_Call``
+    def __cinit__(self, Record site, char *sample, dict data):
+        #: The ``Record`` for this ``_Call``
         self.site = site
         #: The sample name
         self.sample = sample
@@ -209,7 +240,7 @@ cdef class _Call(object):
         return "Call(sample=%s, GT=%s, GQ=%s)" % (self.sample, self.gt_nums, self.data.get('GQ', ''))
 
     def __richcmp__(self, other, int op):
-        """ Two _Calls are equal if their _Records are equal
+        """ Two _Calls are equal if their Records are equal
             and the samples and ``gt_type``s are the same
         """
         # < 0 | <= 1 | == 2 | != 3 |  > 4 | >= 5
@@ -221,6 +252,10 @@ cdef class _Call(object):
     def __getitem__(self, key):
         """ Lookup value, backwards compatibility """
         return self.data[key]
+
+    def __reduce__(self):
+        print "reduce call"
+        1/0
 
     property gt_bases:
         def __get__(self):
@@ -410,7 +445,7 @@ cdef class _Call(object):
         return self.gt_type == HET
 
 
-cdef class _Record(object):
+cdef class Record(object):
     """ A set of calls at a site.  Equivalent to a line in a VCF file.
 
         The standard VCF fields:
@@ -433,8 +468,8 @@ cdef class _Record(object):
     cdef public int POS, start, end, num_hom_ref, num_het, num_hom_alt, \
              num_unknown, num_called
     cdef public dict INFO
-    cdef readonly dict _sample_indexes
-    cdef readonly bint has_genotypes
+    cdef public dict _sample_indexes
+    cdef public bint has_genotypes
 
     def __cinit__(self, char *CHROM, int POS, char *ID,
                         char *REF, list ALT, object QUAL=None,
@@ -443,11 +478,8 @@ cdef class _Record(object):
                         list gt_bases=None, list gt_types=None,
                         list gt_phases=None, list gt_depths=None,
                         list gt_ref_depths=None, list gt_alt_depths=None,
-                        list gt_quals=None, list gt_copy_numbers=None,
-                        list gt_phred_likelihoods=None,
-                        int num_hom_ref=0,
-                        int num_het=0, int num_hom_alt=0,
-                        int num_unknown=0, int num_called=0):
+                        list gt_quals=None, list gt_copy_numbers=None, list gt_phred_likelihoods=None,
+                        int num_hom_ref=0, int num_het=0, int num_hom_alt=0, int num_unknown=0, int num_called=0):
         # CORE VCF fields
         self.CHROM = CHROM
         self.POS = POS
@@ -488,8 +520,56 @@ cdef class _Record(object):
         else:
             self.has_genotypes = False
 
+    def __reduce__(self):
+        return (utils.build_record, (self.CHROM, self.POS, self.ID, self.REF,
+            self.ALT), dict(CHROM=self.CHROM, POS=self.POS,
+            ID=self.ID, REF=self.REF, ALT=self.ALT, QUAL=self.QUAL,
+            FILTER=self.FILTER, INFO=self.INFO, FORMAT=self.FORMAT,
+            _sample_indexes=self._sample_indexes, samples=self.samples,
+            start=self.start, end=self.end, alleles=self.alleles,
+            gt_bases=self.gt_bases, gt_types=self.gt_types,
+            gt_phases=self.gt_phases, gt_depths=self.gt_depths, gt_ref_depths=self.gt_ref_depths,
+            gt_alt_depths=self.gt_alt_depths, gt_quals=self.gt_quals,
+            gt_copy_numbers=self.gt_copy_numbers,
+            gt_phred_likelihoods=self.gt_phred_likelihoods,
+            num_hom_ref=self.num_hom_ref, num_het=self.num_het,
+            num_hom_alt=self.num_hom_alt, num_unknown=self.num_unknown,
+            num_called=self.num_called,
+            has_genotypes=self.has_genotypes))
+
+    def __setstate__(self, kwargs):
+        self.CHROM = kwargs['CHROM']
+        self.POS = kwargs['POS']
+        self.ID = kwargs['ID']
+        self.REF = kwargs['REF']
+        self.ALT = kwargs['ALT']
+        self.FILTER = kwargs['FILTER']
+        self.INFO = kwargs['INFO']
+        self.QUAL = kwargs['QUAL']
+        self.FORMAT = kwargs['FORMAT']
+        self._sample_indexes = kwargs['_sample_indexes']
+        self.samples = kwargs['samples']
+        self.start = kwargs['start']
+        self.end = kwargs['end']
+        self.alleles = kwargs['alleles']
+        self.gt_bases = kwargs['gt_bases']
+        self.gt_types = kwargs['gt_types']
+        self.gt_phases = kwargs['gt_phases']
+        self.gt_depths = kwargs['gt_depths']
+        self.gt_alt_depths = kwargs['gt_alt_depths']
+        self.gt_ref_depths = kwargs['gt_ref_depths']
+        self.gt_copy_numbers = kwargs['gt_copy_numbers']
+        self.gt_quals = kwargs['gt_quals']
+        self.gt_phred_likelihoods = kwargs['gt_phred_likelihoods']
+        self.num_hom_ref = kwargs['num_hom_ref']
+        self.num_het = kwargs['num_het']
+        self.num_hom_alt = kwargs['num_hom_alt']
+        self.num_unknown = kwargs['num_unknown']
+        self.num_called = kwargs['num_called']
+        self.has_genotypes = kwargs['has_genotypes']
+
     def __richcmp__(self, other, int op):
-        """ _Records are equal if they describe the same variant (same position, alleles) """
+        """ Records are equal if they describe the same variant (same position, alleles) """
 
         # < 0 | <= 1 | == 2 | != 3 |  > 4 | >= 5
         if op == 2: # 2
@@ -778,10 +858,10 @@ cdef class _Record(object):
 
 cdef class Reader(object):
 
-    """ Reader for a VCF v 4.1 file, an iterator returning ``_Record objects`` """
+    """ Reader for a VCF v 4.1 file, an iterator returning ``Record objects`` """
     cdef bytes _col_defn_line
     cdef char _prepend_chr
-    cdef object reader
+    cdef public object reader
     cdef bint compressed, prepend_chr
     cdef public dict metadata, infos, filters, formats,
     cdef readonly dict _sample_indexes
@@ -834,6 +914,28 @@ cdef class Reader(object):
         self._tabix = None
         self._prepend_chr = prepend_chr
         self._parse_metainfo()
+
+    def __reduce__(self):
+        from .utils import build_for_pickle
+        print "before:", self.samples
+        kwargs = {'metadata': self.metadata, 'infos': self.infos,
+                  'filters': self.filters, 'formats': self.formats,
+                  'samples': self.samples, '_header_lines': self._header_lines,
+                  '_sample_indexes': self._sample_indexes,
+                  '_prepend_chr': self._prepend_chr}
+        return (build_for_pickle, tuple(), kwargs)
+
+    def __setstate__(self, kwargs):
+        self.metadata = kwargs['metadata']
+        self.infos = kwargs['infos']
+        self.filters = kwargs['filters']
+        self.formats = kwargs['formats']
+        self.samples = kwargs['samples']
+        self.num_samples = len(self.samples)
+        self._sample_indexes = kwargs['_sample_indexes']
+        self._header_lines = kwargs['_header_lines']
+        self._prepend_chr = kwargs['_prepend_chr']
+
 
     def __iter__(self):
         return self
@@ -963,7 +1065,7 @@ cdef class Reader(object):
         return retdict
 
 
-    def _parse_samples(self, _Record rec, list samples, char *samp_fmt_s):
+    def _parse_samples(self, Record rec, list samples, char *samp_fmt_s):
         '''Parse a sample entry according to the format specified in the FORMAT
         column.'''
         cdef list samp_fmt = samp_fmt_s.split(':')
@@ -1047,7 +1149,6 @@ cdef class Reader(object):
         rec.num_hom_ref = num_hom_ref
         rec.num_unknown = num_unknown
 
-
     def __next__(self):
         '''Return the next record in the file.'''
         line = self.reader.next().rstrip()
@@ -1088,7 +1189,7 @@ cdef class Reader(object):
         except IndexError:
             fmt = None
 
-        rec = _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
+        rec = Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
 
         # collect GENOTYPE information for the current VCF record 
         if fmt is not None:
