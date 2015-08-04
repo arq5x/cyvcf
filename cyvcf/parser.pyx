@@ -43,8 +43,9 @@ HOM_ALT = 3
 UNKNOWN = 2
 
 
-cdef inline dict _parse_sample(char *sample, list samp_fmt,
-                        list samp_fmt_types, list samp_fmt_nums):
+cdef inline _Call _parse_sample(char *sample, list samp_fmt,
+                               list samp_fmt_types, list samp_fmt_nums,
+                               char *name, _Record rec):
 
     cdef dict sampdict = {x: None for x in samp_fmt}
     cdef list lvals
@@ -92,8 +93,7 @@ cdef inline dict _parse_sample(char *sample, list samp_fmt,
             sampdict[fmt] = _map(float, lvals)
         else:
             sampdict[fmt] = vals
-
-    return sampdict
+    return _Call(rec, name, sampdict)
 
 cdef inline list _map(func, list iterable, char *bad='.'):
     '''``map``, but make bad values None.'''
@@ -1005,12 +1005,11 @@ cdef class Reader(object):
         cdef list gt_phred_likelihoods = [None] * self.num_samples
 
         for i in xrange(self.num_samples):
-            name = self.samples[i]
-            sample = samples[i]
 
-            sampdict = _parse_sample(sample, samp_fmt, \
-                                     samp_fmt_types, samp_fmt_nums)
-            call = _Call(rec, name, sampdict)
+            call = _parse_sample(samples[i], samp_fmt, \
+                                 samp_fmt_types, samp_fmt_nums,
+                                 self.samples[i], rec)
+
             samp_data[i] = call
 
             alleles = call.gt_bases
