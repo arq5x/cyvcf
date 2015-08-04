@@ -185,6 +185,7 @@ cdef class _Call(object):
     cdef public _Record site   #instance of _Record
     cdef public dict data
     cdef public bint called, phased
+    cdef list alleles
 
     def __cinit__(self, _Record site, char *sample, dict data):
         #: The ``_Record`` for this ``_Call``
@@ -202,6 +203,10 @@ cdef class _Call(object):
             self.phased = 1
         else:
             self.phased = 0
+        if self.called:
+            self.alleles = self.gt_nums.split('|' if self.phased else '/')
+        else:
+            self.alleles = []
 
     def __repr__(self):
         return "Call(sample=%s, GT=%s, GQ=%s)" % (self.sample, self.gt_nums, self.data.get('GQ', ''))
@@ -228,12 +233,11 @@ cdef class _Call(object):
             # nothing to do if no genotype call
             if self.called:
                 # grab the numeric alleles of the gt string; tokenize by phasing
-                phase_char = '/' if not self.phased else '|'
-                alleles = self.gt_nums.split(phase_char)
                 # lookup and return the actual DNA alleles
+                phase_char = '|' if self.phased else '/'
                 try:
                     return phase_char.join([self.site.alleles[int(a)] \
-                                            if a != '.' else '.' for a in alleles])
+                                            if a != '.' else '.' for a in self.alleles])
                 except KeyError:
                     sys.stderr.write("Allele number not found in list of alleles\n")
             else:
@@ -256,19 +260,17 @@ cdef class _Call(object):
             gt_type = None
             if self.called:
                 # grab the numeric alleles of the gt string; tokenize by phasing
-                phase_char = '/' if not self.phased else '|'
-                alleles = self.gt_nums.split(phase_char)
 
-                if len(alleles) == 2:
-                    if alleles[0] == alleles[1]:
-                        if alleles[0] == "0":
+                if len(self.alleles) == 2:
+                    if self.alleles[0] == self.alleles[1]:
+                        if self.alleles[0] == "0":
                             gt_type = HOM_REF
                         else:
                             gt_type = HOM_ALT
                     else:
                         gt_type = HET
-                elif len(alleles) == 1:
-                    if alleles[0] == "0":
+                elif len(self.alleles) == 1:
+                    if self.alleles[0] == "0":
                         gt_type = HOM_REF
                     else:
                         gt_type = HOM_ALT
@@ -1013,13 +1015,6 @@ cdef class Reader(object):
 
             alleles = call.gt_bases
             type = call.gt_type
-            phased = call.phased
-            depth = call.gt_depth
-            ref_depth = call.gt_ref_depth
-            alt_depth = call.gt_alt_depth
-            qual = call.gt_qual
-            copy_number = call.gt_copy_number
-            phred_likelihoods = call.gt_phred_likelihoods
 
             # add to the "all-samples" lists of GT info
             if alleles is not None:
@@ -1029,13 +1024,13 @@ cdef class Reader(object):
                 gt_alleles.append('./.')
                 gt_types.append(2)
 
-            gt_phases.append(phased)
-            gt_depths.append(depth)
-            gt_ref_depths.append(ref_depth)
-            gt_alt_depths.append(alt_depth)
-            gt_quals.append(qual)
-            gt_copy_numbers.append(copy_number)
-            gt_phred_likelihoods.append(phred_likelihoods)
+            gt_phases.append(call.phased)
+            gt_depths.append(call.gt_depth)
+            gt_ref_depths.append(call.gt_ref_depth)
+            gt_alt_depths.append(call.gt_alt_depth)
+            gt_quals.append(call.gt_qual)
+            gt_copy_numbers.append(call.gt_copy_number)
+            gt_phred_likelihoods.append(call.gt_phred_likelihoods)
 
             # 0 / 00000000 hom ref
             # 1 / 00000001 het
