@@ -42,6 +42,59 @@ HET = 1
 HOM_ALT = 3
 UNKNOWN = 2
 
+
+cdef inline dict _parse_sample(char *sample, list samp_fmt,
+                        list samp_fmt_types, list samp_fmt_nums):
+
+    cdef dict sampdict = {x: None for x in samp_fmt}
+    cdef list lvals
+
+    cdef list svals = sample.split(":")
+
+    cdef int i
+    cdef int N = len(svals)
+    for i in range(N):
+        fmt = samp_fmt[i]
+        entry_type = samp_fmt_types[i]
+        entry_num = samp_fmt_nums[i]
+        vals = svals[i]
+
+        # short circuit the most common
+        if str(vals) in (".", "./.", ""):
+            sampdict[fmt] = None
+            continue
+
+        # we don't need to split single entries
+        if entry_num == 1 or entry_num is None and ',' not in vals:
+            if entry_type == 'Integer':
+                try:
+                    sampdict[fmt] = int(vals)
+                except ValueError:
+                    try:
+                        sampdict[fmt] = float(vals)
+                    except ValueError:
+                        sampdict[fmt] = vals
+            elif entry_type == 'Float':
+                sampdict[fmt] = float(vals)
+            else:
+                sampdict[fmt] = vals
+
+            if entry_num != 1:
+                sampdict[fmt] = sampdict[fmt]
+
+            continue
+
+        lvals = vals.split(',')
+
+        if entry_type == 'Integer':
+            sampdict[fmt] = _map(int, lvals)
+        elif entry_type in ('Float', 'Numeric'):
+            sampdict[fmt] = _map(float, lvals)
+        else:
+            sampdict[fmt] = vals
+
+    return sampdict
+
 cdef inline list _map(func, list iterable, char *bad='.'):
     '''``map``, but make bad values None.'''
     return [func(x) if x != bad else None for x in iterable]
@@ -724,7 +777,6 @@ cdef class _Record(object):
         """ Return True for reference calls """
         return len(self.ALT) == 1 and self.ALT[0] is None
 
-
 cdef class Reader(object):
 
     """ Reader for a VCF v 4.1 file, an iterator returning ``_Record objects`` """
@@ -739,7 +791,6 @@ cdef class Reader(object):
     cdef object _tabix
     cdef public object filename
     cdef int num_samples
-    cdef public _Record curr_record
 
     def __init__(self, fsock=None, filename=None,
                         bint compressed=False, bint prepend_chr=False):
@@ -880,18 +931,6 @@ cdef class Reader(object):
                 else:
                     entry_type = 'String'
 
-            """
-            try:
-                entry_type = self.infos[ID].type
-            except KeyError:
-                try:
-                    entry_type = RESERVED_INFO[ID]
-                except KeyError:
-                    if entry[1]:
-                        entry_type = 'String'
-                    else:
-                        entry_type = 'Flag'
-            """
             if entry_type == b'Integer':
                 vals = entry[1].split(',')
                 try:
@@ -922,7 +961,7 @@ cdef class Reader(object):
         return retdict
 
 
-    def _parse_samples(self, list samples, char *samp_fmt_s):
+    def _parse_samples(self, _Record rec, list samples, char *samp_fmt_s):
         '''Parse a sample entry according to the format specified in the FORMAT
         column.'''
         cdef list samp_fmt = samp_fmt_s.split(':')
@@ -962,14 +1001,14 @@ cdef class Reader(object):
         cdef list gt_quals  = []# 10, 30, 20, etc.
         cdef list gt_copy_numbers  = []# 2, 1, 4, etc.
         cdef list gt_phred_likelihoods = []
-        i = 0
+
         for i in xrange(self.num_samples):
             name = self.samples[i]
             sample = samples[i]
 
-            sampdict = self._parse_sample(sample, samp_fmt, \
-                                          samp_fmt_types, samp_fmt_nums)
-            call = _Call(self.curr_record, name, sampdict)
+            sampdict = _parse_sample(sample, samp_fmt, \
+                                     samp_fmt_types, samp_fmt_nums)
+            call = _Call(rec, name, sampdict)
             samp_data.append(call)
 
             alleles = call.gt_bases
@@ -1021,59 +1060,15 @@ cdef class Reader(object):
                            num_hom_alt=num_hom_alt, num_unknown=num_unknown,
                            num_called=num_called)
 
-    cpdef _parse_sample(Reader self, char *sample, list samp_fmt,
-                            list samp_fmt_types, list samp_fmt_nums):
-
-        cdef dict sampdict = dict([(x, None) for x in samp_fmt])
-        cdef list lvals
-
-        # TO DO: Optimize this into a C-loop
-        for fmt, entry_type, entry_num, vals in itertools.izip(
-                samp_fmt, samp_fmt_types, samp_fmt_nums, sample.split(':')):
-
-            # short circuit the most common
-            if vals in ('.', './.', '.|.', ""):
-                sampdict[fmt] = None
-                continue
-
-            # we don't need to split single entries
-            if entry_num == 1 or ',' not in vals:
-                if entry_type == 'Integer':
-                    try:
-                        sampdict[fmt] = int(vals)
-                    except ValueError:
-                        sampdict[fmt] = float(vals)
-                elif entry_type == 'Float':
-                    sampdict[fmt] = float(vals)
-                else:
-                    sampdict[fmt] = vals
-
-                if entry_num != 1:
-                    sampdict[fmt] = sampdict[fmt]
-
-                continue
-
-
-            lvals = vals.split(',')
-
-            if entry_type == 'Integer':
-                sampdict[fmt] = _map(int, lvals)
-            elif entry_type in ('Float', 'Numeric'):
-                sampdict[fmt] = _map(float, lvals)
-            else:
-                sampdict[fmt] = vals
-
-        return sampdict
 
 
     def __next__(self):
         '''Return the next record in the file.'''
         line = self.reader.next().rstrip()
-        self.parse(line)
-        return self.curr_record
+        return self.parse(line)
 
 
-    def _update_genotype_info(self, var, sample_info):
+    cdef _update_genotype_info(self, var, sample_info):
         var.samples = sample_info.samples
         var.gt_bases = sample_info.gt_bases
         var.gt_types = sample_info.gt_types
@@ -1090,10 +1085,9 @@ cdef class Reader(object):
         var.num_unknown = sample_info.num_unknown
         var.num_called = sample_info.num_called
 
-    def parse(self, line, set_self=True):
+    def parse(self, line):
         '''Return the next record in the file.'''
-        cdef list row
-        row = line.split('\t')
+        cdef list row = line.split('\t')
 
         #CHROM
         cdef bytes chrom = row[0]
@@ -1126,15 +1120,13 @@ cdef class Reader(object):
         except IndexError:
             fmt = None
 
-        curr = _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
+        rec = _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
 
-        # collect GENOTYPE information for the current VCF record (self.curr_record)
-        if set_self:
-            self.curr_record = curr
+        # collect GENOTYPE information for the current VCF record 
         if fmt is not None:
-            sample_info = self._parse_samples(row[9:], fmt)
-            self._update_genotype_info(curr, sample_info)
-        return curr
+            sample_info = self._parse_samples(rec, row[9:], fmt)
+            self._update_genotype_info(rec, sample_info)
+        return rec
 
     def fetch(self, chrom, start, end=None):
         """ fetch records from a Tabix indexed VCF, requires pysam
