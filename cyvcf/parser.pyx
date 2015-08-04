@@ -36,7 +36,6 @@ _SampleInfo = collections.namedtuple('SampleInfo', 'samples, gt_bases, \
                                                     num_hom_alt, num_unknown, \
                                                     num_called')
 
-
 HOM_REF = 0
 HET = 1
 HOM_ALT = 3
@@ -199,10 +198,8 @@ cdef class _Call(object):
         # True if the GT is not ./.
         self.called = self.gt_nums is not None
         # True if the GT is phased (A|G, not A/G)
-        if self.gt_nums is not None and self.data['GT'].find('|') >= 0:
-            self.phased = 1
-        else:
-            self.phased = 0
+        self.phased = self.called and '|' in self.data['GT']
+
         if self.called:
             self.alleles = self.gt_nums.split('|' if self.phased else '/')
         else:
@@ -951,6 +948,9 @@ cdef class Reader(object):
                     val = True
             elif entry_type == b'Character':
                 val = entry[1]
+            else:
+                print >>sys.stderr, "XXXXXXXXXXXXXXXX"
+                print >>sys.stderr, entry_type, entry
 
             try:
                 if self.infos[ID].num == 1 and entry_type != b'String':
@@ -993,16 +993,16 @@ cdef class Reader(object):
         cdef int num_hom_alt = 0
         cdef int num_unknown = 0
         cdef int num_called = 0
-        cdef list samp_data  = [None] * self.num_samples# list of _Call objects for each sample
-        cdef list gt_alleles = [None] * self.num_samples# A/A, A|G, G/G, etc.
-        cdef list gt_types   = [None] * self.num_samples# 0, 1, 2, etc.
-        cdef list gt_phases  = [None] * self.num_samples# T, F, T, etc.
-        cdef list gt_depths  = [None] * self.num_samples# 10, 37, 0, etc.
-        cdef list gt_ref_depths  = [None] * self.num_samples# 3, 32, 0, etc.
-        cdef list gt_alt_depths  = [None] * self.num_samples# 7, 5, 0, etc.
-        cdef list gt_quals  = [None] * self.num_samples# 10, 30, 20, etc.
-        cdef list gt_copy_numbers  = [None] * self.num_samples# 2, 1, 4, etc.
-        cdef list gt_phred_likelihoods = [None] * self.num_samples
+        rec.samples  = [None] * self.num_samples# list of _Call objects for each sample
+        rec.gt_bases = [None] * self.num_samples# A/A, A|G, G/G, etc.
+        rec.gt_types   = [None] * self.num_samples# 0, 1, 2, etc.
+        rec.gt_phases  = [None] * self.num_samples# T, F, T, etc.
+        rec.gt_depths  = [None] * self.num_samples# 10, 37, 0, etc.
+        rec.gt_ref_depths  = [None] * self.num_samples# 3, 32, 0, etc.
+        rec.gt_alt_depths  = [None] * self.num_samples# 7, 5, 0, etc.
+        rec.gt_quals  = [None] * self.num_samples# 10, 30, 20, etc.
+        rec.gt_copy_numbers  = [None] * self.num_samples# 2, 1, 4, etc.
+        rec.gt_phred_likelihoods = [None] * self.num_samples
 
         for i in xrange(self.num_samples):
 
@@ -1010,26 +1010,25 @@ cdef class Reader(object):
                                  samp_fmt_types, samp_fmt_nums,
                                  self.samples[i], rec)
 
-            samp_data[i] = call
+            rec.samples[i] = call
 
             alleles = call.gt_bases
             type = call.gt_type
 
             # add to the "all-samples" lists of GT info
             if alleles is not None:
-                gt_alleles[i] = alleles
-                gt_types[i] = type
+                rec.gt_bases[i] = alleles
+                rec.gt_types[i] = type if type is not None else 2
             else:
-                gt_alleles[i] = './.'
-                gt_types[i] = 2
-
-            gt_phases[i] = call.phased
-            gt_depths[i] = call.gt_depth
-            gt_ref_depths[i] = call.gt_ref_depth
-            gt_alt_depths[i] = call.gt_alt_depth
-            gt_quals[i] = call.gt_qual
-            gt_copy_numbers[i] = call.gt_copy_number
-            gt_phred_likelihoods[i] = call.gt_phred_likelihoods
+                rec.gt_bases[i] = './.'
+                rec.gt_types[i] = 2
+            rec.gt_phases[i] = call.phased
+            rec.gt_depths[i] = call.gt_depth
+            rec.gt_ref_depths[i] = call.gt_ref_depth
+            rec.gt_alt_depths[i] = call.gt_alt_depth
+            rec.gt_quals[i] = call.gt_qual
+            rec.gt_copy_numbers[i] = call.gt_copy_number
+            rec.gt_phred_likelihoods[i] = call.gt_phred_likelihoods
 
             # 0 / 00000000 hom ref
             # 1 / 00000001 het
@@ -1042,42 +1041,17 @@ cdef class Reader(object):
             elif type == HOM_ALT: num_hom_alt += 1
             elif type == None: num_unknown += 1
 
-        num_called = num_hom_ref + num_het + num_hom_alt
-
-        return _SampleInfo(samples=samp_data, gt_bases=gt_alleles,
-                           gt_types=gt_types, gt_phases=gt_phases,
-                           gt_depths=gt_depths, gt_ref_depths=gt_ref_depths,
-                           gt_alt_depths=gt_alt_depths, gt_quals=gt_quals,
-                           gt_copy_numbers=gt_copy_numbers,
-                           gt_phred_likelihoods=gt_phred_likelihoods,
-                           num_hom_ref=num_hom_ref, num_het=num_het,
-                           num_hom_alt=num_hom_alt, num_unknown=num_unknown,
-                           num_called=num_called)
-
+        rec.num_called = num_hom_ref + num_het + num_hom_alt
+        rec.num_hom_alt = num_hom_alt
+        rec.num_het = num_het
+        rec.num_hom_ref = num_hom_ref
+        rec.num_unknown = num_unknown
 
 
     def __next__(self):
         '''Return the next record in the file.'''
         line = self.reader.next().rstrip()
         return self.parse(line)
-
-
-    cdef _update_genotype_info(self, var, sample_info):
-        var.samples = sample_info.samples
-        var.gt_bases = sample_info.gt_bases
-        var.gt_types = sample_info.gt_types
-        var.gt_phases = sample_info.gt_phases
-        var.gt_depths = sample_info.gt_depths
-        var.gt_ref_depths = sample_info.gt_ref_depths
-        var.gt_alt_depths = sample_info.gt_alt_depths
-        var.gt_quals = sample_info.gt_quals
-        var.gt_copy_numbers = sample_info.gt_copy_numbers
-        var.gt_phred_likelihoods = sample_info.gt_phred_likelihoods
-        var.num_hom_ref = sample_info.num_hom_ref
-        var.num_het = sample_info.num_het
-        var.num_hom_alt = sample_info.num_hom_alt
-        var.num_unknown = sample_info.num_unknown
-        var.num_called = sample_info.num_called
 
     def parse(self, line):
         '''Return the next record in the file.'''
@@ -1118,8 +1092,7 @@ cdef class Reader(object):
 
         # collect GENOTYPE information for the current VCF record 
         if fmt is not None:
-            sample_info = self._parse_samples(rec, row[9:], fmt)
-            self._update_genotype_info(rec, sample_info)
+            self._parse_samples(rec, row[9:], fmt)
         return rec
 
     def fetch(self, chrom, start, end=None):
@@ -1166,7 +1139,8 @@ class Writer(object):
         for line in template.metadata.items():
             stream.write('##%s=%s\n' % line)
         for line in template.infos.values():
-            stream.write('##INFO=<ID=%s,Number=%s,Type=%s,Description="%s">\n' % tuple(self._map(str, line)))
+            stream.write('##INFO=<ID=%s,Number=%s,Type=%s,Description="%s">\n' %
+                    tuple(self._map(str, line)))
         for line in template.formats.values():
             stream.write('##FORMAT=<ID=%s,Number=%s,Type=%s,Description="%s">\n' % tuple(self._map(str, line)))
         for line in template.filters.values():
@@ -1194,7 +1168,7 @@ class Writer(object):
     def _format_info(self, info):
         if not info:
             return '.'
-        return ';'.join(["%s=%s" % (x, self._stringify(y)) for x, y in info.items()])
+        return ';'.join("%s=%s" % (x, self._stringify(y)) for x, y in info.items())
 
     def _format_sample(self, fmt, sample):
         if sample.data["GT"] is None:
@@ -1202,7 +1176,7 @@ class Writer(object):
         return ':'.join(self._stringify(sample.data[f]) for f in fmt.split(':'))
 
     def _stringify(self, x, none='.'):
-        if type(x) == type([]):
+        if isinstance(x, list):
             return ','.join(self._map(str, x, none))
         return str(x) if x is not None else none
 
