@@ -236,8 +236,8 @@ cdef class _Call(object):
                 # lookup and return the actual DNA alleles
                 phase_char = '|' if self.phased else '/'
                 try:
-                    return phase_char.join([self.site.alleles[int(a)] \
-                                            if a != '.' else '.' for a in self.alleles])
+                    return phase_char.join(self.site.alleles[int(a)] \
+                                           if a != '.' else '.' for a in self.alleles)
                 except KeyError:
                     sys.stderr.write("Allele number not found in list of alleles\n")
             else:
@@ -993,16 +993,16 @@ cdef class Reader(object):
         cdef int num_hom_alt = 0
         cdef int num_unknown = 0
         cdef int num_called = 0
-        cdef list samp_data  = []# list of _Call objects for each sample
-        cdef list gt_alleles = []# A/A, A|G, G/G, etc.
-        cdef list gt_types   = []# 0, 1, 2, etc.
-        cdef list gt_phases  = []# T, F, T, etc.
-        cdef list gt_depths  = []# 10, 37, 0, etc.
-        cdef list gt_ref_depths  = []# 3, 32, 0, etc.
-        cdef list gt_alt_depths  = []# 7, 5, 0, etc.
-        cdef list gt_quals  = []# 10, 30, 20, etc.
-        cdef list gt_copy_numbers  = []# 2, 1, 4, etc.
-        cdef list gt_phred_likelihoods = []
+        cdef list samp_data  = [None] * self.num_samples# list of _Call objects for each sample
+        cdef list gt_alleles = [None] * self.num_samples# A/A, A|G, G/G, etc.
+        cdef list gt_types   = [None] * self.num_samples# 0, 1, 2, etc.
+        cdef list gt_phases  = [None] * self.num_samples# T, F, T, etc.
+        cdef list gt_depths  = [None] * self.num_samples# 10, 37, 0, etc.
+        cdef list gt_ref_depths  = [None] * self.num_samples# 3, 32, 0, etc.
+        cdef list gt_alt_depths  = [None] * self.num_samples# 7, 5, 0, etc.
+        cdef list gt_quals  = [None] * self.num_samples# 10, 30, 20, etc.
+        cdef list gt_copy_numbers  = [None] * self.num_samples# 2, 1, 4, etc.
+        cdef list gt_phred_likelihoods = [None] * self.num_samples
 
         for i in xrange(self.num_samples):
             name = self.samples[i]
@@ -1011,26 +1011,26 @@ cdef class Reader(object):
             sampdict = _parse_sample(sample, samp_fmt, \
                                      samp_fmt_types, samp_fmt_nums)
             call = _Call(rec, name, sampdict)
-            samp_data.append(call)
+            samp_data[i] = call
 
             alleles = call.gt_bases
             type = call.gt_type
 
             # add to the "all-samples" lists of GT info
             if alleles is not None:
-                gt_alleles.append(alleles)
-                gt_types.append(type)
+                gt_alleles[i] = alleles
+                gt_types[i] = type
             else:
-                gt_alleles.append('./.')
-                gt_types.append(2)
+                gt_alleles[i] = './.'
+                gt_types[i] = 2
 
-            gt_phases.append(call.phased)
-            gt_depths.append(call.gt_depth)
-            gt_ref_depths.append(call.gt_ref_depth)
-            gt_alt_depths.append(call.gt_alt_depth)
-            gt_quals.append(call.gt_qual)
-            gt_copy_numbers.append(call.gt_copy_number)
-            gt_phred_likelihoods.append(call.gt_phred_likelihoods)
+            gt_phases[i] = call.phased
+            gt_depths[i] = call.gt_depth
+            gt_ref_depths[i] = call.gt_ref_depth
+            gt_alt_depths[i] = call.gt_alt_depth
+            gt_quals[i] = call.gt_qual
+            gt_copy_numbers[i] = call.gt_copy_number
+            gt_phred_likelihoods[i] = call.gt_phred_likelihoods
 
             # 0 / 00000000 hom ref
             # 1 / 00000001 het
