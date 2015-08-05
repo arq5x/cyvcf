@@ -164,5 +164,3 @@ see :doc:`FILTERS` for full description.
 
 '''
 from .parser import VCFReader, Reader, VCFWriter, Writer
-from .parreader import ParReader
-
