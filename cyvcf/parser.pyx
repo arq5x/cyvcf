@@ -1,4 +1,3 @@
-#cython: profile=True
 import collections
 import re
 import csv
