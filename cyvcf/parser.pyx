@@ -1,3 +1,4 @@
+#cython: profile=True
 import collections
 import re
 import csv
@@ -25,60 +26,22 @@ RESERVED_FORMAT = {
     'GQ': 'Float', 'HQ': 'Float'
 }
 
-#Info = collections.namedtuple('Info', ['id', 'num', 'type', 'desc'])
-#Filter = collections.namedtuple('Filter', ['id', 'desc'])
-#Format = collections.namedtuple('Format', ['id', 'num', 'type', 'desc'])
+Info = collections.namedtuple('Info', ['id', 'num', 'type', 'desc'])
+Filter = collections.namedtuple('Filter', ['id', 'desc'])
+Format = collections.namedtuple('Format', ['id', 'num', 'type', 'desc'])
 
 HOM_REF = 0
 HET = 1
 HOM_ALT = 3
 UNKNOWN = 2
 
-cdef class Filter(object):
-    cdef public str id
-    cdef public str desc
-
-    def __init__(self, id, desc):
-        self.id = id
-        self.desc = desc
-
-    def __reduce__(self):
-        return utils.build_filter, (self.id, self.desc), {}
-
-    def __setstate__(self, *args, **kwargs):
-        pass
-
-cdef class Format(object):
-    cdef public str id
-    cdef public object num
-    cdef public str type
-    cdef public str desc
-
-    def __init__(self, id, num, type, desc):
-        self.id = id
-        self.num = num
-        self.type = type
-        self.desc = desc
-
-    def __reduce__(self):
-        return utils.build_format, (self.id, self.num, self.type, self.desc), {}
-
-    def __setstate__(self, *args, **kwargs):
-        pass
-
-cdef class Info(Format):
-    def __reduce__(self):
-        return utils.build_info, (self.id, self.num, self.type, self.desc), {}
-
-    def __setstate__(self, *args, **kwargs):
-        pass
-
-def _parse_sample(char *sample, list samp_fmt,
+cdef _Call _parse_sample(char *sample, list samp_fmt,
                                list samp_fmt_types, list samp_fmt_nums,
                                char *name, Record rec):
 
     cdef dict sampdict = {x: None for x in samp_fmt}
     cdef list lvals
+    cdef char *entry_type
 
     cdef list svals = sample.split(":")
 
@@ -96,8 +59,8 @@ def _parse_sample(char *sample, list samp_fmt,
             continue
 
         # we don't need to split single entries
-        if entry_num == 1 or entry_num is None and ',' not in vals:
-            if entry_type == 'Integer':
+        if entry_num == 1 or (entry_num is None and ',' not in vals):
+            if entry_type == b'Integer':
                 try:
                     sampdict[fmt] = int(vals)
                 except ValueError:
@@ -105,22 +68,20 @@ def _parse_sample(char *sample, list samp_fmt,
                         sampdict[fmt] = float(vals)
                     except ValueError:
                         sampdict[fmt] = vals
-            elif entry_type == 'Float':
+                continue
+            elif entry_type == b'Float':
                 sampdict[fmt] = float(vals)
             else:
                 sampdict[fmt] = vals
-
-            if entry_num != 1:
-                sampdict[fmt] = sampdict[fmt]
 
             continue
 
         lvals = vals.split(',')
 
-        if entry_type == 'Integer':
-            sampdict[fmt] = _map(int, lvals)
-        elif entry_type in ('Float', 'Numeric'):
-            sampdict[fmt] = _map(float, lvals)
+        if entry_type == b'Integer':
+            sampdict[fmt] = [int(x) if x != '.' else '.' for x in lvals]
+        elif entry_type in (b'Float', b'Numeric'):
+            sampdict[fmt] = [float(x) if x != '.' else '.' for x in lvals]
         else:
             sampdict[fmt] = vals
     return _Call(rec, name, sampdict)
@@ -253,10 +214,6 @@ cdef class _Call(object):
         """ Lookup value, backwards compatibility """
         return self.data[key]
 
-    def __reduce__(self):
-        print "reduce call"
-        1/0
-
     property gt_bases:
         def __get__(self):
             '''The actual genotype alleles.
@@ -266,10 +223,11 @@ cdef class _Call(object):
             if self.called:
                 # grab the numeric alleles of the gt string; tokenize by phasing
                 # lookup and return the actual DNA alleles
-                phase_char = '|' if self.phased else '/'
+                phase_char = ['/', '|'][self.phased]
                 try:
-                    return phase_char.join(self.site.alleles[int(a)] \
-                                           if a != '.' else '.' for a in self.alleles)
+                    return phase_char.join([self.site.alleles[int(a)] \
+                                           if a != '.' else '.' for a in
+                                           self.alleles])
                 except KeyError:
                     sys.stderr.write("Allele number not found in list of alleles\n")
             else:
@@ -361,7 +319,7 @@ cdef class _Call(object):
                 # it's not usable anyway, so return None
                 if not isinstance(self.data["GL"], list):
                     return None
-                return [int(round(-10 * g)) if g is not None else None for g in self.data['GL']]
+                return [int(round(-10 * g)) if g is not None and g != '.' else None for g in self.data['GL']]
             else:
                 return []
 
@@ -519,54 +477,6 @@ cdef class Record(object):
             self.has_genotypes = True
         else:
             self.has_genotypes = False
-
-    def __reduce__(self):
-        return (utils.build_record, (self.CHROM, self.POS, self.ID, self.REF,
-            self.ALT), dict(CHROM=self.CHROM, POS=self.POS,
-            ID=self.ID, REF=self.REF, ALT=self.ALT, QUAL=self.QUAL,
-            FILTER=self.FILTER, INFO=self.INFO, FORMAT=self.FORMAT,
-            _sample_indexes=self._sample_indexes, samples=self.samples,
-            start=self.start, end=self.end, alleles=self.alleles,
-            gt_bases=self.gt_bases, gt_types=self.gt_types,
-            gt_phases=self.gt_phases, gt_depths=self.gt_depths, gt_ref_depths=self.gt_ref_depths,
-            gt_alt_depths=self.gt_alt_depths, gt_quals=self.gt_quals,
-            gt_copy_numbers=self.gt_copy_numbers,
-            gt_phred_likelihoods=self.gt_phred_likelihoods,
-            num_hom_ref=self.num_hom_ref, num_het=self.num_het,
-            num_hom_alt=self.num_hom_alt, num_unknown=self.num_unknown,
-            num_called=self.num_called,
-            has_genotypes=self.has_genotypes))
-
-    def __setstate__(self, kwargs):
-        self.CHROM = kwargs['CHROM']
-        self.POS = kwargs['POS']
-        self.ID = kwargs['ID']
-        self.REF = kwargs['REF']
-        self.ALT = kwargs['ALT']
-        self.FILTER = kwargs['FILTER']
-        self.INFO = kwargs['INFO']
-        self.QUAL = kwargs['QUAL']
-        self.FORMAT = kwargs['FORMAT']
-        self._sample_indexes = kwargs['_sample_indexes']
-        self.samples = kwargs['samples']
-        self.start = kwargs['start']
-        self.end = kwargs['end']
-        self.alleles = kwargs['alleles']
-        self.gt_bases = kwargs['gt_bases']
-        self.gt_types = kwargs['gt_types']
-        self.gt_phases = kwargs['gt_phases']
-        self.gt_depths = kwargs['gt_depths']
-        self.gt_alt_depths = kwargs['gt_alt_depths']
-        self.gt_ref_depths = kwargs['gt_ref_depths']
-        self.gt_copy_numbers = kwargs['gt_copy_numbers']
-        self.gt_quals = kwargs['gt_quals']
-        self.gt_phred_likelihoods = kwargs['gt_phred_likelihoods']
-        self.num_hom_ref = kwargs['num_hom_ref']
-        self.num_het = kwargs['num_het']
-        self.num_hom_alt = kwargs['num_hom_alt']
-        self.num_unknown = kwargs['num_unknown']
-        self.num_called = kwargs['num_called']
-        self.has_genotypes = kwargs['has_genotypes']
 
     def __richcmp__(self, other, int op):
         """ Records are equal if they describe the same variant (same position, alleles) """
@@ -914,28 +824,6 @@ cdef class Reader(object):
         self._tabix = None
         self._prepend_chr = prepend_chr
         self._parse_metainfo()
-
-    def __reduce__(self):
-        from .utils import build_for_pickle
-        print "before:", self.samples
-        kwargs = {'metadata': self.metadata, 'infos': self.infos,
-                  'filters': self.filters, 'formats': self.formats,
-                  'samples': self.samples, '_header_lines': self._header_lines,
-                  '_sample_indexes': self._sample_indexes,
-                  '_prepend_chr': self._prepend_chr}
-        return (build_for_pickle, tuple(), kwargs)
-
-    def __setstate__(self, kwargs):
-        self.metadata = kwargs['metadata']
-        self.infos = kwargs['infos']
-        self.filters = kwargs['filters']
-        self.formats = kwargs['formats']
-        self.samples = kwargs['samples']
-        self.num_samples = len(self.samples)
-        self._sample_indexes = kwargs['_sample_indexes']
-        self._header_lines = kwargs['_header_lines']
-        self._prepend_chr = kwargs['_prepend_chr']
-
 
     def __iter__(self):
         return self
