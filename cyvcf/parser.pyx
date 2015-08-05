@@ -41,7 +41,6 @@ cdef _Call _parse_sample(char *sample, list samp_fmt,
 
     cdef dict sampdict = {x: None for x in samp_fmt}
     cdef list lvals
-    cdef char *entry_type
 
     cdef list svals = sample.split(":")
 
@@ -54,33 +53,41 @@ cdef _Call _parse_sample(char *sample, list samp_fmt,
         vals = svals[i]
 
         # short circuit the most common
-        if str(vals) in (".", "./.", ""):
-            sampdict[fmt] = None
+        if vals == ".":
             continue
+        if vals == "./.":
+            continue
+        if vals == "":
+            continue
+
 
         # we don't need to split single entries
         if entry_num == 1 or (entry_num is None and ',' not in vals):
-            if entry_type == b'Integer':
-                try:
+            if entry_type == 'Integer':
+                if vals.isdigit():
                     sampdict[fmt] = int(vals)
+                    continue
+                try:
+                    sampdict[fmt] = float(vals)
                 except ValueError:
-                    try:
-                        sampdict[fmt] = float(vals)
-                    except ValueError:
-                        sampdict[fmt] = vals
+                    sampdict[fmt] = vals
                 continue
-            elif entry_type == b'Float':
+            elif entry_type == 'Float':
                 sampdict[fmt] = float(vals)
             else:
                 sampdict[fmt] = vals
 
             continue
 
+        if entry_num == 1 and entry_type == 'String':
+            sampdict[fmt] = vals
+            continue
+
         lvals = vals.split(',')
 
-        if entry_type == b'Integer':
+        if entry_type == 'Integer':
             sampdict[fmt] = [int(x) if x != '.' else '.' for x in lvals]
-        elif entry_type in (b'Float', b'Numeric'):
+        elif entry_type in ('Float', 'Numeric'):
             sampdict[fmt] = [float(x) if x != '.' else '.' for x in lvals]
         else:
             sampdict[fmt] = vals
