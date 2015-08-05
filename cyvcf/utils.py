@@ -18,7 +18,7 @@ def walk_together(*readers):
 
         # update nexts that we just yielded
         for i, n in enumerate(nexts):
-            
+
             if n is not None and n == min_next:
                 try:
                     nexts[i] = readers[i].next()
@@ -27,11 +27,3 @@ def walk_together(*readers):
 
         if all([x is None for x in nexts]):
             break
-
-
-
-
-
-
-
-

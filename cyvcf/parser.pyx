@@ -1,9 +1,12 @@
+#cython: profile=True
 import collections
 import re
 import csv
 import gzip
 import sys
 import itertools
+
+from . import utils
 
 try:
     import pysam
@@ -23,24 +26,65 @@ RESERVED_FORMAT = {
     'GQ': 'Float', 'HQ': 'Float'
 }
 
-_Info = collections.namedtuple('Info', ['id', 'num', 'type', 'desc'])
-_Filter = collections.namedtuple('Filter', ['id', 'desc'])
-_Format = collections.namedtuple('Format', ['id', 'num', 'type', 'desc'])
-_SampleInfo = collections.namedtuple('SampleInfo', 'samples, gt_bases, \
-                                                    gt_types, gt_phases, \
-                                                    gt_depths, gt_ref_depths, \
-                                                    gt_alt_depths, gt_quals, \
-                                                    gt_copy_numbers, \
-                                                    gt_phred_likelihoods, \
-                                                    num_hom_ref, num_het, \
-                                                    num_hom_alt, num_unknown, \
-                                                    num_called')
-
+Info = collections.namedtuple('Info', ['id', 'num', 'type', 'desc'])
+Filter = collections.namedtuple('Filter', ['id', 'desc'])
+Format = collections.namedtuple('Format', ['id', 'num', 'type', 'desc'])
 
 HOM_REF = 0
 HET = 1
 HOM_ALT = 3
 UNKNOWN = 2
+
+cdef _Call _parse_sample(char *sample, list samp_fmt,
+                               list samp_fmt_types, list samp_fmt_nums,
+                               char *name, Record rec):
+
+    cdef dict sampdict = {x: None for x in samp_fmt}
+    cdef list lvals
+    cdef char *entry_type
+
+    cdef list svals = sample.split(":")
+
+    cdef int i
+    cdef int N = len(svals)
+    for i in range(N):
+        fmt = samp_fmt[i]
+        entry_type = samp_fmt_types[i]
+        entry_num = samp_fmt_nums[i]
+        vals = svals[i]
+
+        # short circuit the most common
+        if str(vals) in (".", "./.", ""):
+            sampdict[fmt] = None
+            continue
+
+        # we don't need to split single entries
+        if entry_num == 1 or (entry_num is None and ',' not in vals):
+            if entry_type == b'Integer':
+                try:
+                    sampdict[fmt] = int(vals)
+                except ValueError:
+                    try:
+                        sampdict[fmt] = float(vals)
+                    except ValueError:
+                        sampdict[fmt] = vals
+                continue
+            elif entry_type == b'Float':
+                sampdict[fmt] = float(vals)
+            else:
+                sampdict[fmt] = vals
+
+            continue
+
+        lvals = vals.split(',')
+
+        if entry_type == b'Integer':
+            sampdict[fmt] = [int(x) if x != '.' else '.' for x in lvals]
+        elif entry_type in (b'Float', b'Numeric'):
+            sampdict[fmt] = [float(x) if x != '.' else '.' for x in lvals]
+        else:
+            sampdict[fmt] = vals
+    return _Call(rec, name, sampdict)
 
 cdef inline list _map(func, list iterable, char *bad='.'):
     '''``map``, but make bad values None.'''
@@ -82,7 +126,7 @@ class _vcf_metadata_parser(object):
         except ValueError:
             num = None
 
-        info = _Info(match.group('id'), num,
+        info = Info(match.group('id'), num,
                      match.group('type'), match.group('desc'))
 
         return (match.group('id'), info)
@@ -94,7 +138,7 @@ class _vcf_metadata_parser(object):
             raise SyntaxError(
                 "One of the FILTER lines is malformed: %s" % filter_string)
 
-        filt = _Filter(match.group('id'), match.group('desc'))
+        filt = Filter(match.group('id'), match.group('desc'))
 
         return (match.group('id'), filt)
 
@@ -112,7 +156,7 @@ class _vcf_metadata_parser(object):
         except ValueError:
             num = None
 
-        form = _Format(match.group('id'), num,
+        form = Format(match.group('id'), num,
                        match.group('type'), match.group('desc'))
 
         return (match.group('id'), form)
@@ -129,12 +173,13 @@ cdef class _Call(object):
     cdef bytes gt_nums  #'0/1'
     # use bytes instead of char * because of C -> Python string complications
     # see: http://docs.cython.org/src/tutorial/strings.html
-    cdef public _Record site   #instance of _Record
+    cdef public Record site   #instance of Record
     cdef public dict data
     cdef public bint called, phased
+    cdef list alleles
 
-    def __cinit__(self, _Record site, char *sample, dict data):
-        #: The ``_Record`` for this ``_Call``
+    def __cinit__(self, Record site, char *sample, dict data):
+        #: The ``Record`` for this ``_Call``
         self.site = site
         #: The sample name
         self.sample = sample
@@ -145,16 +190,18 @@ cdef class _Call(object):
         # True if the GT is not ./.
         self.called = self.gt_nums is not None
         # True if the GT is phased (A|G, not A/G)
-        if self.gt_nums is not None and self.data['GT'].find('|') >= 0:
-            self.phased = 1
+        self.phased = self.called and '|' in self.data['GT']
+
+        if self.called:
+            self.alleles = self.gt_nums.split('|' if self.phased else '/')
         else:
-            self.phased = 0
+            self.alleles = []
 
     def __repr__(self):
         return "Call(sample=%s, GT=%s, GQ=%s)" % (self.sample, self.gt_nums, self.data.get('GQ', ''))
 
     def __richcmp__(self, other, int op):
-        """ Two _Calls are equal if their _Records are equal
+        """ Two _Calls are equal if their Records are equal
             and the samples and ``gt_type``s are the same
         """
         # < 0 | <= 1 | == 2 | != 3 |  > 4 | >= 5
@@ -175,12 +222,12 @@ cdef class _Call(object):
             # nothing to do if no genotype call
             if self.called:
                 # grab the numeric alleles of the gt string; tokenize by phasing
-                phase_char = '/' if not self.phased else '|'
-                alleles = self.gt_nums.split(phase_char)
                 # lookup and return the actual DNA alleles
+                phase_char = ['/', '|'][self.phased]
                 try:
                     return phase_char.join([self.site.alleles[int(a)] \
-                                            if a != '.' else '.' for a in alleles])
+                                           if a != '.' else '.' for a in
+                                           self.alleles])
                 except KeyError:
                     sys.stderr.write("Allele number not found in list of alleles\n")
             else:
@@ -203,19 +250,17 @@ cdef class _Call(object):
             gt_type = None
             if self.called:
                 # grab the numeric alleles of the gt string; tokenize by phasing
-                phase_char = '/' if not self.phased else '|'
-                alleles = self.gt_nums.split(phase_char)
 
-                if len(alleles) == 2:
-                    if alleles[0] == alleles[1]:
-                        if alleles[0] == "0":
+                if len(self.alleles) == 2:
+                    if self.alleles[0] == self.alleles[1]:
+                        if self.alleles[0] == "0":
                             gt_type = HOM_REF
                         else:
                             gt_type = HOM_ALT
                     else:
                         gt_type = HET
-                elif len(alleles) == 1:
-                    if alleles[0] == "0":
+                elif len(self.alleles) == 1:
+                    if self.alleles[0] == "0":
                         gt_type = HOM_REF
                     else:
                         gt_type = HOM_ALT
@@ -248,7 +293,10 @@ cdef class _Call(object):
                 if depths is not None:
                     # require bi-allelic
                     if isinstance(depths, (list, tuple)) and len(depths) == 2:
-                        return depths[0]
+                        d = depths[0]
+                        if d is None:
+                            return -1
+                        return d
                     else:
                         # ref allele is first
                         return -1
@@ -271,7 +319,7 @@ cdef class _Call(object):
                 # it's not usable anyway, so return None
                 if not isinstance(self.data["GL"], list):
                     return None
-                return [int(round(-10 * g)) if g is not None else None for g in self.data['GL']]
+                return [int(round(-10 * g)) if g is not None and g != '.' else None for g in self.data['GL']]
             else:
                 return []
 
@@ -292,7 +340,10 @@ cdef class _Call(object):
                         return -1
                     else:
                         # alt allele is second
-                        return depths[1]
+                        d = depths[1]
+                        if d is None:
+                            return -1
+                        return d
                 else:
                     return -1
             # Freebayes style
@@ -352,7 +403,7 @@ cdef class _Call(object):
         return self.gt_type == HET
 
 
-cdef class _Record(object):
+cdef class Record(object):
     """ A set of calls at a site.  Equivalent to a line in a VCF file.
 
         The standard VCF fields:
@@ -375,8 +426,8 @@ cdef class _Record(object):
     cdef public int POS, start, end, num_hom_ref, num_het, num_hom_alt, \
              num_unknown, num_called
     cdef public dict INFO
-    cdef readonly dict _sample_indexes
-    cdef readonly bint has_genotypes
+    cdef public dict _sample_indexes
+    cdef public bint has_genotypes
 
     def __cinit__(self, char *CHROM, int POS, char *ID,
                         char *REF, list ALT, object QUAL=None,
@@ -385,11 +436,8 @@ cdef class _Record(object):
                         list gt_bases=None, list gt_types=None,
                         list gt_phases=None, list gt_depths=None,
                         list gt_ref_depths=None, list gt_alt_depths=None,
-                        list gt_quals=None, list gt_copy_numbers=None,
-                        list gt_phred_likelihoods=None,
-                        int num_hom_ref=0,
-                        int num_het=0, int num_hom_alt=0,
-                        int num_unknown=0, int num_called=0):
+                        list gt_quals=None, list gt_copy_numbers=None, list gt_phred_likelihoods=None,
+                        int num_hom_ref=0, int num_het=0, int num_hom_alt=0, int num_unknown=0, int num_called=0):
         # CORE VCF fields
         self.CHROM = CHROM
         self.POS = POS
@@ -431,7 +479,7 @@ cdef class _Record(object):
             self.has_genotypes = False
 
     def __richcmp__(self, other, int op):
-        """ _Records are equal if they describe the same variant (same position, alleles) """
+        """ Records are equal if they describe the same variant (same position, alleles) """
 
         # < 0 | <= 1 | == 2 | != 3 |  > 4 | >= 5
         if op == 2: # 2
@@ -718,13 +766,12 @@ cdef class _Record(object):
         """ Return True for reference calls """
         return len(self.ALT) == 1 and self.ALT[0] is None
 
-
 cdef class Reader(object):
 
-    """ Reader for a VCF v 4.1 file, an iterator returning ``_Record objects`` """
+    """ Reader for a VCF v 4.1 file, an iterator returning ``Record objects`` """
     cdef bytes _col_defn_line
     cdef char _prepend_chr
-    cdef object reader
+    cdef public object reader
     cdef bint compressed, prepend_chr
     cdef public dict metadata, infos, filters, formats,
     cdef readonly dict _sample_indexes
@@ -733,7 +780,6 @@ cdef class Reader(object):
     cdef object _tabix
     cdef public object filename
     cdef int num_samples
-    cdef public _Record curr_record
 
     def __init__(self, fsock=None, filename=None,
                         bint compressed=False, bint prepend_chr=False):
@@ -874,18 +920,6 @@ cdef class Reader(object):
                 else:
                     entry_type = 'String'
 
-            """
-            try:
-                entry_type = self.infos[ID].type
-            except KeyError:
-                try:
-                    entry_type = RESERVED_INFO[ID]
-                except KeyError:
-                    if entry[1]:
-                        entry_type = 'String'
-                    else:
-                        entry_type = 'Flag'
-            """
             if entry_type == b'Integer':
                 vals = entry[1].split(',')
                 try:
@@ -904,6 +938,9 @@ cdef class Reader(object):
                     val = True
             elif entry_type == b'Character':
                 val = entry[1]
+            else:
+                print >>sys.stderr, "XXXXXXXXXXXXXXXX"
+                print >>sys.stderr, entry_type, entry
 
             try:
                 if self.infos[ID].num == 1 and entry_type != b'String':
@@ -916,7 +953,7 @@ cdef class Reader(object):
         return retdict
 
 
-    def _parse_samples(self, list samples, char *samp_fmt_s):
+    def _parse_samples(self, Record rec, list samples, char *samp_fmt_s):
         '''Parse a sample entry according to the format specified in the FORMAT
         column.'''
         cdef list samp_fmt = samp_fmt_s.split(':')
@@ -946,51 +983,42 @@ cdef class Reader(object):
         cdef int num_hom_alt = 0
         cdef int num_unknown = 0
         cdef int num_called = 0
-        cdef list samp_data  = []# list of _Call objects for each sample
-        cdef list gt_alleles = []# A/A, A|G, G/G, etc.
-        cdef list gt_types   = []# 0, 1, 2, etc.
-        cdef list gt_phases  = []# T, F, T, etc.
-        cdef list gt_depths  = []# 10, 37, 0, etc.
-        cdef list gt_ref_depths  = []# 3, 32, 0, etc.
-        cdef list gt_alt_depths  = []# 7, 5, 0, etc.
-        cdef list gt_quals  = []# 10, 30, 20, etc.
-        cdef list gt_copy_numbers  = []# 2, 1, 4, etc.
-        cdef list gt_phred_likelihoods = []
-        i = 0
-        for i in xrange(self.num_samples):
-            name = self.samples[i]
-            sample = samples[i]
+        rec.samples  = [None] * self.num_samples# list of _Call objects for each sample
+        rec.gt_bases = [None] * self.num_samples# A/A, A|G, G/G, etc.
+        rec.gt_types   = [None] * self.num_samples# 0, 1, 2, etc.
+        rec.gt_phases  = [None] * self.num_samples# T, F, T, etc.
+        rec.gt_depths  = [None] * self.num_samples# 10, 37, 0, etc.
+        rec.gt_ref_depths  = [None] * self.num_samples# 3, 32, 0, etc.
+        rec.gt_alt_depths  = [None] * self.num_samples# 7, 5, 0, etc.
+        rec.gt_quals  = [None] * self.num_samples# 10, 30, 20, etc.
+        rec.gt_copy_numbers  = [None] * self.num_samples# 2, 1, 4, etc.
+        rec.gt_phred_likelihoods = [None] * self.num_samples
 
-            sampdict = self._parse_sample(sample, samp_fmt, \
-                                          samp_fmt_types, samp_fmt_nums)
-            call = _Call(self.curr_record, name, sampdict)
-            samp_data.append(call)
+        for i in xrange(self.num_samples):
+
+            call = _parse_sample(samples[i], samp_fmt, \
+                                 samp_fmt_types, samp_fmt_nums,
+                                 self.samples[i], rec)
+
+            rec.samples[i] = call
 
             alleles = call.gt_bases
             type = call.gt_type
-            phased = call.phased
-            depth = call.gt_depth
-            ref_depth = call.gt_ref_depth
-            alt_depth = call.gt_alt_depth
-            qual = call.gt_qual
-            copy_number = call.gt_copy_number
-            phred_likelihoods = call.gt_phred_likelihoods
 
             # add to the "all-samples" lists of GT info
             if alleles is not None:
-                gt_alleles.append(alleles)
-                gt_types.append(type)
+                rec.gt_bases[i] = alleles
+                rec.gt_types[i] = type if type is not None else 2
             else:
-                gt_alleles.append('./.')
-                gt_types.append(2)
-
-            gt_phases.append(phased)
-            gt_depths.append(depth)
-            gt_ref_depths.append(ref_depth)
-            gt_alt_depths.append(alt_depth)
-            gt_quals.append(qual)
-            gt_copy_numbers.append(copy_number)
-            gt_phred_likelihoods.append(phred_likelihoods)
+                rec.gt_bases[i] = './.'
+                rec.gt_types[i] = 2
+            rec.gt_phases[i] = call.phased
+            rec.gt_depths[i] = call.gt_depth
+            rec.gt_ref_depths[i] = call.gt_ref_depth
+            rec.gt_alt_depths[i] = call.gt_alt_depth
+            rec.gt_quals[i] = call.gt_qual
+            rec.gt_copy_numbers[i] = call.gt_copy_number
+            rec.gt_phred_likelihoods[i] = call.gt_phred_likelihoods
 
             # 0 / 00000000 hom ref
             # 1 / 00000001 het
@@ -1003,91 +1031,20 @@ cdef class Reader(object):
             elif type == HOM_ALT: num_hom_alt += 1
             elif type == None: num_unknown += 1
 
-        num_called = num_hom_ref + num_het + num_hom_alt
-
-        return _SampleInfo(samples=samp_data, gt_bases=gt_alleles,
-                           gt_types=gt_types, gt_phases=gt_phases,
-                           gt_depths=gt_depths, gt_ref_depths=gt_ref_depths,
-                           gt_alt_depths=gt_alt_depths, gt_quals=gt_quals,
-                           gt_copy_numbers=gt_copy_numbers,
-                           gt_phred_likelihoods=gt_phred_likelihoods,
-                           num_hom_ref=num_hom_ref, num_het=num_het,
-                           num_hom_alt=num_hom_alt, num_unknown=num_unknown,
-                           num_called=num_called)
-
-    cpdef _parse_sample(Reader self, char *sample, list samp_fmt,
-                            list samp_fmt_types, list samp_fmt_nums):
-
-        cdef dict sampdict = dict([(x, None) for x in samp_fmt])
-        cdef list lvals
-
-        # TO DO: Optimize this into a C-loop
-        for fmt, entry_type, entry_num, vals in itertools.izip(
-                samp_fmt, samp_fmt_types, samp_fmt_nums, sample.split(':')):
-
-            # short circuit the most common
-            if vals in ('.', './.', '.|.', ""):
-                sampdict[fmt] = None
-                continue
-
-            # we don't need to split single entries
-            if entry_num == 1 or ',' not in vals:
-                if entry_type == 'Integer':
-                    try:
-                        sampdict[fmt] = int(vals)
-                    except ValueError:
-                        sampdict[fmt] = float(vals)
-                elif entry_type == 'Float':
-                    sampdict[fmt] = float(vals)
-                else:
-                    sampdict[fmt] = vals
-
-                if entry_num != 1:
-                    sampdict[fmt] = sampdict[fmt]
-
-                continue
-
-
-            lvals = vals.split(',')
-
-            if entry_type == 'Integer':
-                sampdict[fmt] = _map(int, lvals)
-            elif entry_type in ('Float', 'Numeric'):
-                sampdict[fmt] = _map(float, lvals)
-            else:
-                sampdict[fmt] = vals
-
-        return sampdict
-
+        rec.num_called = num_hom_ref + num_het + num_hom_alt
+        rec.num_hom_alt = num_hom_alt
+        rec.num_het = num_het
+        rec.num_hom_ref = num_hom_ref
+        rec.num_unknown = num_unknown
 
     def __next__(self):
         '''Return the next record in the file.'''
         line = self.reader.next().rstrip()
-        self.parse(line)
-        return self.curr_record
+        return self.parse(line)
 
-
-    def _update_genotype_info(self, var, sample_info):
-        var.samples = sample_info.samples
-        var.gt_bases = sample_info.gt_bases
-        var.gt_types = sample_info.gt_types
-        var.gt_phases = sample_info.gt_phases
-        var.gt_depths = sample_info.gt_depths
-        var.gt_ref_depths = sample_info.gt_ref_depths
-        var.gt_alt_depths = sample_info.gt_alt_depths
-        var.gt_quals = sample_info.gt_quals
-        var.gt_copy_numbers = sample_info.gt_copy_numbers
-        var.gt_phred_likelihoods = sample_info.gt_phred_likelihoods
-        var.num_hom_ref = sample_info.num_hom_ref
-        var.num_het = sample_info.num_het
-        var.num_hom_alt = sample_info.num_hom_alt
-        var.num_unknown = sample_info.num_unknown
-        var.num_called = sample_info.num_called
-
-    def parse(self, line, set_self=True):
+    def parse(self, line):
         '''Return the next record in the file.'''
-        cdef list row
-        row = line.split('\t')
+        cdef list row = line.split('\t')
 
         #CHROM
         cdef bytes chrom = row[0]
@@ -1120,15 +1077,12 @@ cdef class Reader(object):
         except IndexError:
             fmt = None
 
-        curr = _Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
+        rec = Record(chrom, pos, id, ref, alt, qual, filt, info, fmt, self._sample_indexes)
 
-        # collect GENOTYPE information for the current VCF record (self.curr_record)
-        if set_self:
-            self.curr_record = curr
+        # collect GENOTYPE information for the current VCF record 
         if fmt is not None:
-            sample_info = self._parse_samples(row[9:], fmt)
-            self._update_genotype_info(curr, sample_info)
-        return curr
+            self._parse_samples(rec, row[9:], fmt)
+        return rec
 
     def fetch(self, chrom, start, end=None):
         """ fetch records from a Tabix indexed VCF, requires pysam
@@ -1174,7 +1128,8 @@ class Writer(object):
         for line in template.metadata.items():
             stream.write('##%s=%s\n' % line)
         for line in template.infos.values():
-            stream.write('##INFO=<ID=%s,Number=%s,Type=%s,Description="%s">\n' % tuple(self._map(str, line)))
+            stream.write('##INFO=<ID=%s,Number=%s,Type=%s,Description="%s">\n' %
+                    tuple(self._map(str, line)))
         for line in template.formats.values():
             stream.write('##FORMAT=<ID=%s,Number=%s,Type=%s,Description="%s">\n' % tuple(self._map(str, line)))
         for line in template.filters.values():
@@ -1202,7 +1157,7 @@ class Writer(object):
     def _format_info(self, info):
         if not info:
             return '.'
-        return ';'.join(["%s=%s" % (x, self._stringify(y)) for x, y in info.items()])
+        return ';'.join("%s=%s" % (x, self._stringify(y)) for x, y in info.items())
 
     def _format_sample(self, fmt, sample):
         if sample.data["GT"] is None:
@@ -1210,7 +1165,7 @@ class Writer(object):
         return ':'.join(self._stringify(sample.data[f]) for f in fmt.split(':'))
 
     def _stringify(self, x, none='.'):
-        if type(x) == type([]):
+        if isinstance(x, list):
             return ','.join(self._map(str, x, none))
         return str(x) if x is not None else none
 

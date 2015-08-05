@@ -179,7 +179,9 @@ class TestWriter(unittest.TestCase):
 
         self.assertEquals(reader.samples, reader2.samples)
         self.assertEquals(reader.formats, reader2.formats)
-        self.assertEquals(reader.infos, reader2.infos)
+
+        for k in reader.infos:
+            self.assertEquals(reader.infos[k], reader2.infos[k], (reader.infos[k], reader2.infos[k]))
 
         for l, r in zip(records, reader2):
             self.assertEquals(l.samples, r.samples)
