@@ -949,7 +949,7 @@ cdef class Reader(object):
                 print >>sys.stderr, entry_type, entry
 
             try:
-                if self.infos[ID].num == 1 and entry_type != b'String':
+                if isinstance(val, list) and self.infos[ID].num == 1 and entry_type != b'String':
                     val = val[0]
             except KeyError:
                 pass
